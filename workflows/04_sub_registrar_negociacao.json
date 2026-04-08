@@ -1,0 +1,210 @@
+{
+  "name": "Sub - Registrar Negociação",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\n\nif (raw.input) {\n  const parsed = typeof raw.input === 'string' ? JSON.parse(raw.input) : raw.input;\n  return [{ json: parsed }];\n}\n\nreturn [{ json: raw }];"
+      },
+      "id": "parse-input",
+      "name": "Parse Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Parse Input').item.json;\n\nconst parceiro = (input.parceiro || '').toString().trim();\nconst produto = (input.produto || '').toString().trim();\nconst statusRaw = (input.status || '').toString().trim().toLowerCase();\n\nif (!parceiro) return [{ json: { _ok: false, codigo: 'CAMPO_FALTANDO', mensagem: 'Campo obrigatório ausente: parceiro.' } }];\nif (!produto) return [{ json: { _ok: false, codigo: 'CAMPO_FALTANDO', mensagem: 'Campo obrigatório ausente: produto.' } }];\nif (!statusRaw) return [{ json: { _ok: false, codigo: 'CAMPO_FALTANDO', mensagem: 'Campo obrigatório ausente: status.' } }];\n\nconst mapaStatus = {\n  compliance: 'compliance',\n  'em compliance': 'compliance',\n  proposta: 'proposta',\n  negociacao: 'negociacao',\n  'negociação': 'negociacao',\n  fechado: 'fechado',\n  ganho: 'fechado',\n  perdido: 'perdido'\n};\n\nconst statusNorm = mapaStatus[statusRaw] || statusRaw;\n\nreturn [{\n  json: {\n    _ok: true,\n    parceiro,\n    produto,\n    status: statusNorm,\n    ponto_focal: input.ponto_focal || '',\n    resumo_negociacao: input.resumo_negociacao || '',\n    observacoes_gerais: input.observacoes_gerais || ''\n  }\n}];"
+      },
+      "id": "normalizar-validar",
+      "name": "Normalizar e Validar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "ok-check",
+              "leftValue": "={{ $json._ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "validacao-ok",
+      "name": "Validação OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.SHEET_PIPELINE_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Pipeline"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $guid }}",
+            "parceiro": "={{ $('Normalizar e Validar').item.json.parceiro }}",
+            "ponto_focal": "={{ $('Normalizar e Validar').item.json.ponto_focal || '' }}",
+            "produto": "={{ $('Normalizar e Validar').item.json.produto }}",
+            "status": "={{ $('Normalizar e Validar').item.json.status }}",
+            "resumo_negociacao": "={{ $('Normalizar e Validar').item.json.resumo_negociacao || '' }}",
+            "observacoes_gerais": "={{ $('Normalizar e Validar').item.json.observacoes_gerais || '' }}",
+            "data_registro": "={{ $now.format('dd/MM/yyyy') }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "sheets-append",
+      "name": "Google Sheets - Registrar",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1100, 200]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "={{ JSON.stringify({ status: 'ok', mensagem: 'Negociação registrada com sucesso.', dados: { id: $json.id, parceiro: $('Normalizar e Validar').item.json.parceiro, produto: $('Normalizar e Validar').item.json.produto, status: $('Normalizar e Validar').item.json.status } }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "resposta-ok",
+      "name": "Resposta OK",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "={{ JSON.stringify({ status: 'erro', codigo: $json.codigo, mensagem: $json.mensagem, dados: null }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "resposta-erro",
+      "name": "Resposta Erro",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1100, 420]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Input": {
+      "main": [
+        [
+          {
+            "node": "Normalizar e Validar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar e Validar": {
+      "main": [
+        [
+          {
+            "node": "Validação OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validação OK?": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Registrar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resposta Erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Registrar": {
+      "main": [
+        [
+          {
+            "node": "Resposta OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "agente-pedro"
+    },
+    {
+      "name": "subworkflow"
+    }
+  ],
+  "pinData": {}
+}

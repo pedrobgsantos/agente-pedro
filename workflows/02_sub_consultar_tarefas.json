@@ -1,0 +1,132 @@
+{
+  "name": "Sub - Consultar Tarefas",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\n\nif (raw.input) {\n  const parsed = typeof raw.input === 'string' ? JSON.parse(raw.input) : raw.input;\n  return [{ json: parsed }];\n}\n\nreturn [{ json: raw }];"
+      },
+      "id": "parse-input",
+      "name": "Parse Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.SHEET_TAREFAS_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Tarefas"
+        },
+        "options": {}
+      },
+      "id": "sheets-read",
+      "name": "Google Sheets - Ler",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst ativas = items.filter(item => {\n  const s = (item.json.status || '').toString().trim().toLowerCase();\n  return s !== 'concluída' && s !== 'concluida';\n});\nif (ativas.length === 0) {\n  return [{ json: { tarefas: [], total: 0 } }];\n}\nreturn [{ json: { tarefas: ativas.map(i => i.json), total: ativas.length } }];"
+      },
+      "id": "filtrar-agregar",
+      "name": "Filtrar e Agregar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "={{ JSON.stringify({ status: 'ok', mensagem: $json.total === 0 ? 'Nenhuma tarefa pendente.' : $json.total + ' tarefa(s) ativa(s) encontrada(s).', dados: $json.tarefas }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "resposta",
+      "name": "Formatar Resposta",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1080, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Input": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Ler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Ler": {
+      "main": [
+        [
+          {
+            "node": "Filtrar e Agregar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar e Agregar": {
+      "main": [
+        [
+          {
+            "node": "Formatar Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "agente-pedro"
+    },
+    {
+      "name": "subworkflow"
+    }
+  ],
+  "pinData": {}
+}

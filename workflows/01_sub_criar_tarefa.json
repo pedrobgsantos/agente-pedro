@@ -1,0 +1,187 @@
+{
+  "name": "Sub - Criar Tarefa",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\n\nif (raw.input) {\n  const parsed = typeof raw.input === 'string' ? JSON.parse(raw.input) : raw.input;\n  return [{ json: parsed }];\n}\n\nreturn [{ json: raw }];"
+      },
+      "id": "parse-input",
+      "name": "Parse Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "titulo-check",
+              "leftValue": "={{ $json.titulo }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "validacao",
+      "name": "Validar Campos",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.SHEET_TAREFAS_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Tarefas"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $guid }}",
+            "titulo": "={{ $('Parse Input').item.json.titulo }}",
+            "prazo": "={{ $('Parse Input').item.json.prazo || '' }}",
+            "observacao": "={{ $('Parse Input').item.json.observacao || '' }}",
+            "status": "pendente",
+            "data_criacao": "={{ $now.format('dd/MM/yyyy') }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "sheets-append",
+      "name": "Google Sheets - Criar",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [880, 200]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "={{ JSON.stringify({ status: 'ok', mensagem: 'Tarefa criada com sucesso.', dados: { id: $json.id, titulo: $('Parse Input').item.json.titulo, status: 'pendente', prazo: $('Parse Input').item.json.prazo || '' } }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "resposta-ok",
+      "name": "Resposta OK",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "={{ JSON.stringify({ status: 'erro', codigo: 'CAMPO_FALTANDO', mensagem: 'Campo obrigatório ausente: titulo.', dados: null }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "resposta-erro",
+      "name": "Resposta Erro",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [880, 420]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Input": {
+      "main": [
+        [
+          {
+            "node": "Validar Campos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar Campos": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Criar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resposta Erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Criar": {
+      "main": [
+        [
+          {
+            "node": "Resposta OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "agente-pedro"
+    },
+    {
+      "name": "subworkflow"
+    }
+  ],
+  "pinData": {}
+}

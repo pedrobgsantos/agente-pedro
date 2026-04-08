@@ -1,0 +1,120 @@
+{
+  "name": "API - Organizar Dia",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "organizar-dia",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "webhookId": "api-organizar-dia"
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $env.WF_CONSULTAR_PIPELINE }}",
+        "options": {}
+      },
+      "id": "sub-pipeline",
+      "name": "Consultar Pipeline",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $env.WF_CONSULTAR_TAREFAS }}",
+        "options": {}
+      },
+      "id": "sub-tarefas",
+      "name": "Consultar Tarefas",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Helpers ──────────────────────────────────────────────────────────────────\n\nconst warnings = [];\n\nfunction warn(msg) {\n  warnings.push(msg);\n}\n\nfunction parseJson(val, origem) {\n  if (val == null) {\n    warn(`${origem}: resposta nula ou indefinida`);\n    return {};\n  }\n  if (typeof val === 'string') {\n    try { return JSON.parse(val); }\n    catch { warn(`${origem}: falha ao parsear JSON`); return {}; }\n  }\n  if (typeof val === 'object') return val;\n  warn(`${origem}: tipo inesperado (${typeof val})`);\n  return {};\n}\n\nfunction safeArray(val, origem) {\n  if (Array.isArray(val)) return val;\n  if (val != null) warn(`${origem}: esperado array, recebido ${typeof val}`);\n  return [];\n}\n\nfunction parseData(str) {\n  if (!str) return null;\n  const parts = String(str).split('/');\n  if (parts.length !== 3) return null;\n  const [d, m, y] = parts;\n  const dt = new Date(`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}T00:00:00`);\n  return isNaN(dt.getTime()) ? null : dt;\n}\n\nfunction deveAparecer(item) {\n  const followup = parseData(item?.proximo_followup);\n  if (!followup) return true;\n  return hoje >= followup;\n}\n\nfunction acaoPipeline(status) {\n  const s = (status || '').toLowerCase();\n  if (s.includes('aguardando proposta')) return 'Cobrar proposta';\n  if (s.includes('compliance'))          return 'Acompanhar compliance';\n  if (s.includes('minuta'))              return 'Retomar minuta';\n  if (s.includes('juridico') || s.includes('jurídico')) return 'Avançar jurídico';\n  if (s.includes('fechamento'))          return 'Concluir fechamento';\n  return 'Avançar negociação';\n}\n\nfunction acaoTarefa(status) {\n  return (status || '').toLowerCase() === 'em andamento' ? 'Avançar tarefa' : 'Concluir tarefa';\n}\n\nfunction montarItemPipeline(item, grupo) {\n  if (!item || typeof item !== 'object') return null;\n\n  let score = grupo === 'urgente' ? 5 : 3;\n\n  const s = (item.status || '').toLowerCase();\n  if (s.includes('fechamento'))                          score += 3;\n  if (s.includes('juridico') || s.includes('jurídico')) score += 2;\n\n  const dias = Number(item.dias) || 0;\n  if (dias > 20)      score += 3;\n  else if (dias > 10) score += 2;\n\n  return {\n    tipo: 'pipeline',\n    titulo: item.parceiro || '',\n    observacao: item.status || '',\n    parceiro: item.parceiro || '',\n    status: item.status || '',\n    score,\n    grupo: '',\n    acao: acaoPipeline(item.status)\n  };\n}\n\nfunction montarItemTarefa(t, hoje) {\n  if (!t || typeof t !== 'object') return null;\n\n  let score = 0;\n  const s = (t.status || '').toString().trim().toLowerCase();\n  const prazo = parseData(t.prazo);\n\n  if (prazo) {\n    const dias = Math.floor((prazo.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));\n    if (dias < 0)      score += 5;\n    else if (dias === 0) score += 4;\n  }\n\n  if (s === 'em andamento') score += 2;\n  else if (s === 'pendente') score += 1;\n\n  return {\n    tipo: 'tarefa',\n    titulo: t.titulo || t.title || '',\n    observacao: t.observacao || '',\n    parceiro: t.parceiro || '',\n    status: t.status || '',\n    score,\n    grupo: '',\n    acao: acaoTarefa(t.status)\n  };\n}\n\n// ── 1. Dados dos subworkflows ─────────────────────────────────────────────────\n\nconst pipelineNode = $('Consultar Pipeline').first().json;\nconst tarefasNode  = $input.first().json;\n\nconst pipelineResp = parseJson(pipelineNode?.response, 'pipeline');\nconst tarefasResp  = parseJson(tarefasNode?.response,  'tarefas');\n\n// ── 2. Normalizar pipeline (apenas urgentes e atencao) ────────────────────────\n\nconst pipelineDados = pipelineResp.dados || pipelineResp;\nconst urgentes = safeArray(pipelineDados.urgentes, 'pipeline.urgentes');\nconst atencao  = safeArray(pipelineDados.atencao,  'pipeline.atencao');\n\n// ── 3. Normalizar tarefas ─────────────────────────────────────────────────────\n\nlet rawTarefas = [];\nif (tarefasResp.dados != null) {\n  rawTarefas = Array.isArray(tarefasResp.dados)\n    ? tarefasResp.dados\n    : safeArray(tarefasResp.dados.tarefas, 'tarefas.dados.tarefas');\n} else {\n  rawTarefas = safeArray(tarefasResp.tarefas, 'tarefas.tarefas');\n}\n\nconst STATUS_ATIVOS = ['pendente', 'em andamento'];\nconst tarefas = rawTarefas.filter(t => {\n  const s = (t?.status || '').toString().trim().toLowerCase();\n  return STATUS_ATIVOS.includes(s);\n});\n\n// ── 4. Montar lista unificada ─────────────────────────────────────────────────\n\nconst hoje = new Date();\nhoje.setHours(0, 0, 0, 0);\n\nconst lista = [\n  ...urgentes.filter(deveAparecer).map(i => montarItemPipeline(i, 'urgente')),\n  ...atencao.filter(deveAparecer).map(i  => montarItemPipeline(i, 'atencao')),\n  ...tarefas.map(t  => montarItemTarefa(t, hoje))\n].filter(Boolean);\n\n// ── 5. Grupos ──────────────────────────────────────────────────────────────────\n\nfor (const item of lista) {\n  if (item.score >= 6)      item.grupo = 'agora';\n  else if (item.score >= 3) item.grupo = 'hoje';\n  else                      item.grupo = 'podeEsperar';\n}\n\n// ── 6. Ordenar por score DESC ──────────────────────────────────────────────────\n\nlista.sort((a, b) => b.score - a.score);\n\n// ── 7. Separar e limitar grupos ────────────────────────────────────────────────\n\nconst agora       = lista.filter(i => i.grupo === 'agora').slice(0, 4);\nconst hojeGroup   = lista.filter(i => i.grupo === 'hoje').slice(0, 4);\nconst podeEsperar = lista.filter(i => i.grupo === 'podeEsperar').slice(0, 3);\n\n// ── 8. Prioridade principal ────────────────────────────────────────────────────\n\nconst tudo = [...agora, ...hojeGroup, ...podeEsperar];\nconst prioridade = tudo.length > 0 ? { ...tudo[0] } : null;\n\nif (!prioridade) warn('Nenhum item encontrado para priorizar');\n\n// ── 9. Output ──────────────────────────────────────────────────────────────────\n\nreturn [{\n  json: {\n    status: 'ok',\n    warnings,\n    prioridade,\n    agora,\n    hoje: hojeGroup,\n    podeEsperar\n  }\n}];"
+      },
+      "id": "processar-prioridade",
+      "name": "Processar Prioridade do Dia",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstEntryJson",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1160, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Consultar Pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Pipeline": {
+      "main": [
+        [
+          {
+            "node": "Consultar Tarefas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Tarefas": {
+      "main": [
+        [
+          {
+            "node": "Processar Prioridade do Dia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Prioridade do Dia": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "agente-pedro"
+    },
+    {
+      "name": "api"
+    }
+  ],
+  "pinData": {}
+}

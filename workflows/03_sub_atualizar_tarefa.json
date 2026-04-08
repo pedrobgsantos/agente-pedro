@@ -1,0 +1,322 @@
+{
+  "name": "Sub - Atualizar Tarefa",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\n\nif (raw.input) {\n  const parsed = typeof raw.input === 'string' ? JSON.parse(raw.input) : raw.input;\n  return [{ json: parsed }];\n}\n\nreturn [{ json: raw }];"
+      },
+      "id": "parse-input",
+      "name": "Parse Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Parse Input').item.json;\nconst titulo = (input.titulo || '').toString().trim();\nconst campoRaw = (input.campo || '').toString().trim().toLowerCase();\n// novo_valor vazio é permitido (limpa o campo) — só rejeita se ausente\nconst novoValor = (input.novo_valor !== undefined && input.novo_valor !== null)\n  ? input.novo_valor.toString()\n  : null;\n\nif (!titulo) return [{ json: { _ok: false, codigo: 'CAMPO_FALTANDO', mensagem: 'Campo obrigatório ausente: titulo.' } }];\nif (!campoRaw) return [{ json: { _ok: false, codigo: 'CAMPO_FALTANDO', mensagem: 'Campo obrigatório ausente: campo.' } }];\nif (novoValor === null) return [{ json: { _ok: false, codigo: 'CAMPO_FALTANDO', mensagem: 'Campo obrigatório ausente: novo_valor.' } }];\n\nconst mapa = {\n  status: 'status',\n  concluido: 'status',\n  concluida: 'status',\n  concluir: 'status',\n  prazo: 'prazo',\n  data: 'prazo',\n  'prazo final': 'prazo',\n  'data limite': 'prazo',\n  observacao: 'observacao',\n  'observação': 'observacao',\n  observacoes: 'observacao',\n  'observações': 'observacao',\n  obs: 'observacao'\n};\nconst campoNorm = mapa[campoRaw];\nif (!campoNorm) {\n  return [{ json: { _ok: false, codigo: 'CAMPO_INVALIDO', mensagem: 'Campo \"' + input.campo + '\" não é permitido. Use: status, prazo ou observacao.' } }];\n}\n\nreturn [{ json: {\n  _ok: true,\n  titulo,\n  campo_norm: campoNorm,\n  novo_valor: novoValor\n} }];"
+      },
+      "id": "normalizar-validar",
+      "name": "Normalizar e Validar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "ok-check",
+              "leftValue": "={{ $json._ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "validacao-ok",
+      "name": "Validação OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.SHEET_TAREFAS_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Tarefas"
+        },
+        "options": {}
+      },
+      "id": "sheets-ler",
+      "name": "Google Sheets - Ler",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1080, 160]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { titulo, campo_norm, novo_valor } = $('Normalizar e Validar').first().json;\n\n// Normaliza texto: minúsculas, sem acentos, sem pontuação, espaços normalizados\nconst normTxt = s => s.toString()\n  .toLowerCase()\n  .normalize('NFD')\n  .replace(/[\\u0300-\\u036f]/g, '')\n  .replace(/[^a-z0-9\\s]/g, '')\n  .replace(/\\s+/g, ' ')\n  .trim();\n\nconst tituloNorm = normTxt(titulo);\nconst todas = $input.all();\nconst encontradas = todas.filter(item => normTxt(item.json.titulo || '') === tituloNorm);\n\nif (encontradas.length === 0) {\n  return [{ json: { _ok: false, codigo: 'NAO_ENCONTRADO', mensagem: 'Tarefa não encontrada: \"' + titulo + '\". Verifique o nome exato.' } }];\n}\nif (encontradas.length > 1) {\n  return [{ json: { _ok: false, codigo: 'AMBIGUIDADE', mensagem: encontradas.length + ' tarefas encontradas com o título \"' + titulo + '\". Seja mais específico.' } }];\n}\n\nconst tarefa = encontradas[0].json;\nreturn [{ json: {\n  _ok: true,\n  id: tarefa.id,\n  titulo_encontrado: tarefa.titulo,\n  campo_norm,\n  novo_valor\n} }];"
+      },
+      "id": "resolver-tarefa",
+      "name": "Resolver Tarefa",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 160]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "ok-check",
+              "leftValue": "={{ $json._ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "sucesso",
+      "name": "Sucesso?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1520, 160]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nconst update = { id: d.id };\nupdate[d.campo_norm] = d.novo_valor;\nreturn [{ json: update }];"
+      },
+      "id": "preparar-update",
+      "name": "Preparar Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1740, 60]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.SHEET_TAREFAS_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Tarefas"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": ["id"]
+        },
+        "options": {}
+      },
+      "id": "sheets-atualizar",
+      "name": "Google Sheets - Atualizar",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1960, 60]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "={{ JSON.stringify({ status: 'ok', mensagem: 'Tarefa atualizada com sucesso.', dados: { id: $('Resolver Tarefa').item.json.id, titulo: $('Resolver Tarefa').item.json.titulo_encontrado, campo: $('Resolver Tarefa').item.json.campo_norm, novo_valor: $('Resolver Tarefa').item.json.novo_valor } }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "resposta-ok",
+      "name": "Resposta OK",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2180, 60]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "={{ JSON.stringify({ status: 'erro', codigo: $json.codigo, mensagem: $json.mensagem, dados: null }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "resposta-erro",
+      "name": "Resposta Erro",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1300, 460]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Input": {
+      "main": [
+        [
+          {
+            "node": "Normalizar e Validar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar e Validar": {
+      "main": [
+        [
+          {
+            "node": "Validação OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validação OK?": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Ler",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resposta Erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Ler": {
+      "main": [
+        [
+          {
+            "node": "Resolver Tarefa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolver Tarefa": {
+      "main": [
+        [
+          {
+            "node": "Sucesso?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sucesso?": {
+      "main": [
+        [
+          {
+            "node": "Preparar Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resposta Erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Update": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Atualizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Atualizar": {
+      "main": [
+        [
+          {
+            "node": "Resposta OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "agente-pedro"
+    },
+    {
+      "name": "subworkflow"
+    }
+  ],
+  "pinData": {}
+}

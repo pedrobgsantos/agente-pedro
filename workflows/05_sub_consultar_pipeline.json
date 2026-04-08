@@ -1,0 +1,132 @@
+{
+  "name": "Sub - Consultar Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\n\nif (raw.input) {\n  const parsed = typeof raw.input === 'string' ? JSON.parse(raw.input) : raw.input;\n  return [{ json: parsed }];\n}\n\nreturn [{ json: raw }];"
+      },
+      "id": "parse-input",
+      "name": "Parse Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.SHEET_PIPELINE_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Pipeline"
+        },
+        "options": {}
+      },
+      "id": "sheets-read",
+      "name": "Google Sheets - Ler",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const linhas = $input.all();\n\nconst limites = {\n  'aguardando proposta': 7,\n  'compliance': 3,\n  'minuta com cliente': 7,\n  'juridico': 10,\n  'fechamento': 3\n};\n\nconst hoje = new Date();\n\nconst parseData = (data) => {\n  if (!data) return null;\n  const [dia, mes, ano] = data.split('/');\n  return new Date(`${ano}-${mes}-${dia}`);\n};\n\nconst resultado = linhas.map(item => {\n  const d = item.json;\n\n  const status = (d.status || '').toLowerCase();\n  const dataInicio = parseData(d.data_inicio_status);\n\n  let dias = 0;\n  if (dataInicio) {\n    dias = Math.floor((hoje - dataInicio) / (1000 * 60 * 60 * 24));\n  }\n\n  const limite = limites[status] || 7;\n\n  let prioridade = 'ok';\n\n  if (dias > limite) prioridade = 'urgente';\n  else if (dias >= limite * 0.8) prioridade = 'atencao';\n\n  return {\n    parceiro: d.parceiro,\n    status,\n    dias,\n    prioridade\n  };\n});\n\nconst urgentes = resultado.filter(r => r.prioridade === 'urgente');\nconst atencao = resultado.filter(r => r.prioridade === 'atencao');\nconst ok = resultado.filter(r => r.prioridade === 'ok');\n\nreturn [{\n  json: {\n    urgentes,\n    atencao,\n    ok\n  }\n}];"
+      },
+      "id": "processar-pipeline",
+      "name": "Processar Pipeline",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "={{ JSON.stringify({ status: 'ok', mensagem: 'Pipeline analisado com sucesso.', dados: $json }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "resposta-ok",
+      "name": "Resposta OK",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1080, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Input": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Ler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Ler": {
+      "main": [
+        [
+          {
+            "node": "Processar Pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Pipeline": {
+      "main": [
+        [
+          {
+            "node": "Resposta OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "agente-pedro"
+    },
+    {
+      "name": "subworkflow"
+    }
+  ],
+  "pinData": {}
+}

@@ -1,0 +1,322 @@
+{
+  "name": "Sub - Atualizar Negociação",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\n\nif (raw.input) {\n  const parsed = typeof raw.input === 'string' ? JSON.parse(raw.input) : raw.input;\n  return [{ json: parsed }];\n}\n\nreturn [{ json: raw }];"
+      },
+      "id": "parse-input",
+      "name": "Parse Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Parse Input').item.json;\n\nconst parceiro = (input.parceiro || '').toString().trim();\nconst statusRaw = (input.status_novo || '').toString().trim().toLowerCase();\n\nif (!parceiro) return [{ json: { _ok: false, codigo: 'CAMPO_FALTANDO', mensagem: 'Campo obrigatório ausente: parceiro.' } }];\nif (!statusRaw) return [{ json: { _ok: false, codigo: 'CAMPO_FALTANDO', mensagem: 'Campo obrigatório ausente: status_novo.' } }];\n\nconst mapaStatus = {\n  compliance: 'compliance',\n  'em compliance': 'compliance',\n  proposta: 'proposta',\n  'aguardando proposta': 'aguardando proposta',\n  negociacao: 'negociacao',\n  'negociação': 'negociacao',\n  fechado: 'fechado',\n  ganho: 'fechado',\n  perdido: 'perdido'\n};\n\nconst statusNorm = mapaStatus[statusRaw] || statusRaw;\n\nconst agora = new Date();\nconst dia = String(agora.getDate()).padStart(2, '0');\nconst mes = String(agora.getMonth() + 1).padStart(2, '0');\nconst ano = agora.getFullYear();\nconst hoje = `${dia}/${mes}/${ano}`;\n\nreturn [{\n  json: {\n    _ok: true,\n    parceiro,\n    status_novo: statusNorm,\n    data_inicio_status: hoje\n  }\n}];"
+      },
+      "id": "normalizar-validar",
+      "name": "Normalizar e Validar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "ok-check",
+              "leftValue": "={{ $json._ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "validacao-ok",
+      "name": "Validação OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.SHEET_PIPELINE_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Pipeline"
+        },
+        "options": {}
+      },
+      "id": "sheets-ler",
+      "name": "Google Sheets - Ler",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1080, 160]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { parceiro, status_novo, data_inicio_status } = $('Normalizar e Validar').item.json;\n\nconst normTxt = s => s.toString()\n  .toLowerCase()\n  .normalize('NFD')\n  .replace(/[\\u0300-\\u036f]/g, '')\n  .replace(/[^a-z0-9\\s]/g, '')\n  .replace(/\\s+/g, ' ')\n  .trim();\n\nconst parceiroNorm = normTxt(parceiro);\nconst todas = $input.all();\nconst encontradas = todas.filter(item => normTxt(item.json.parceiro || '') === parceiroNorm);\n\nif (encontradas.length === 0) {\n  return [{ json: { _ok: false, codigo: 'NAO_ENCONTRADO', mensagem: 'Parceiro não encontrado: \"' + parceiro + '\". Verifique o nome exato.' } }];\n}\nif (encontradas.length > 1) {\n  return [{ json: { _ok: false, codigo: 'AMBIGUIDADE', mensagem: encontradas.length + ' negociações encontradas com o parceiro \"' + parceiro + '\". Seja mais específico.' } }];\n}\n\nconst neg = encontradas[0].json;\nreturn [{ json: {\n  _ok: true,\n  id: neg.id,\n  parceiro_encontrado: neg.parceiro,\n  status_novo,\n  data_inicio_status\n} }];"
+      },
+      "id": "resolver-negociacao",
+      "name": "Resolver Negociação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 160]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "ok-check",
+              "leftValue": "={{ $json._ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "sucesso",
+      "name": "Sucesso?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1520, 160]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nreturn [{\n  json: {\n    id: d.id,\n    status: d.status_novo,\n    data_inicio_status: d.data_inicio_status\n  }\n}];"
+      },
+      "id": "preparar-update",
+      "name": "Preparar Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1740, 60]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.SHEET_PIPELINE_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Pipeline"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": ["id"]
+        },
+        "options": {}
+      },
+      "id": "sheets-atualizar",
+      "name": "Google Sheets - Atualizar",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1960, 60]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "={{ JSON.stringify({ status: 'ok', mensagem: 'Status da negociação atualizado com sucesso.', dados: { id: $json.id, parceiro: $json.parceiro_encontrado, status_novo: $json.status_novo, data_inicio_status: $json.data_inicio_status } }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "resposta-ok",
+      "name": "Resposta OK",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2180, 60]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "={{ JSON.stringify({ status: 'erro', codigo: $json.codigo, mensagem: $json.mensagem, dados: null }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "resposta-erro",
+      "name": "Resposta Erro",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1300, 460]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Input": {
+      "main": [
+        [
+          {
+            "node": "Normalizar e Validar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar e Validar": {
+      "main": [
+        [
+          {
+            "node": "Validação OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validação OK?": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Ler",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resposta Erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Ler": {
+      "main": [
+        [
+          {
+            "node": "Resolver Negociação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolver Negociação": {
+      "main": [
+        [
+          {
+            "node": "Sucesso?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sucesso?": {
+      "main": [
+        [
+          {
+            "node": "Preparar Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resposta Erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Update": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Atualizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Atualizar": {
+      "main": [
+        [
+          {
+            "node": "Resposta OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "agente-pedro"
+    },
+    {
+      "name": "subworkflow"
+    }
+  ],
+  "pinData": {}
+}
