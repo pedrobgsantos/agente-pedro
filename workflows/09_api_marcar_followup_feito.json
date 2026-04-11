@@ -1,0 +1,156 @@
+{
+  "name": "API - Marcar Follow-up Feito",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "followup-feito",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "api-followup-feito"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validar e Preparar Input\n// Entrada esperada: { id_followup, status_followup, data_followup_realizado }\nconst body = $input.first().json.body || $input.first().json;\n\nconst id       = (body.id_followup              || '').toString().trim();\nconst status   = (body.status_followup           || '').toString().trim();\nconst data     = (body.data_followup_realizado   || '').toString().trim();\n\nif (!id) {\n  return [{ json: { _ok: false, codigo: 'CAMPO_FALTANDO', mensagem: 'Campo obrigatório ausente: id_followup.' } }];\n}\nif (!status) {\n  return [{ json: { _ok: false, codigo: 'CAMPO_FALTANDO', mensagem: 'Campo obrigatório ausente: status_followup.' } }];\n}\n\nreturn [{ json: { _ok: true, id: id, status_followup: status, data_followup_realizado: data } }];\n"
+      },
+      "id": "validar-input",
+      "name": "Validar Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "ok-check",
+              "leftValue": "={{ $json._ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "validacao-ok",
+      "name": "Validação OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.SHEET_PIPELINE_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Pipeline"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": ["id"]
+        },
+        "options": {}
+      },
+      "id": "sheets-atualizar",
+      "name": "Google Sheets - Atualizar Follow-up",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [900, 180]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'ok' }) }}",
+        "options": {}
+      },
+      "id": "respond-ok",
+      "name": "Respond to Webhook - OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 180]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'erro', codigo: $json.codigo, mensagem: $json.mensagem }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "respond-erro",
+      "name": "Respond to Webhook - Erro",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 420]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          { "node": "Validar Input", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Validar Input": {
+      "main": [
+        [
+          { "node": "Validação OK?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Validação OK?": {
+      "main": [
+        [
+          { "node": "Google Sheets - Atualizar Follow-up", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Respond to Webhook - Erro", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Google Sheets - Atualizar Follow-up": {
+      "main": [
+        [
+          { "node": "Respond to Webhook - OK", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "api" },
+    { "name": "followup" },
+    { "name": "webhook" }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2026-04-10T00:00:00.000Z",
+  "versionId": "1"
+}
