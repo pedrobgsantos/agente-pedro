@@ -1,0 +1,107 @@
+{
+  "name": "API - Gerar Follow-up",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gerar-followup",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "api-gerar-followup"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar Input\n// Lê o body do webhook e monta o array de actions esperado pelo\n// Sub - Gerar Follow-up Inteligente (Parse Input lê inputData.actions)\nconst body = $input.first().json.body || $input.first().json;\n\nconst action = {\n  id: 'single',\n  parceiro:               body.parceiro               || '',\n  ponto_focal:            body.ponto_focal             || '',\n  produto:                body.produto                 || '',\n  status:                 body.status                  || '',\n  resumo_negociacao:      body.resumo_negociacao        || '',\n  observacoes_gerais:     body.observacoes_gerais       || '',\n  status_followup_norm:   body.status_followup          || '',\n  data_followup_realizado: body.data_followup_realizado || '',\n  ultima_cadencia_feita:  body.ultima_cadencia_feita    || '',\n  risco:                  body.risco                   || 'baixo',\n  bucket:                 body.prioridade              || 'podeEsperar'\n};\n\nreturn [{ json: { actions: [action] } }];\n"
+      },
+      "id": "preparar-input",
+      "name": "Preparar Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $env.WF_GERAR_FOLLOWUP_INTELIGENTE }}",
+        "source": "passthrough",
+        "options": {}
+      },
+      "id": "execute-subworkflow",
+      "name": "Sub - Gerar Follow-up Inteligente",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatar Resposta\n// O subworkflow retorna { id, mensagem_pronta } — normaliza para { status, mensagem }\nconst result = $input.first().json;\n\nconst mensagem = String(\n  result.mensagem_pronta ||\n  result.mensagem         ||\n  result.text             ||\n  result.output           ||\n  ''\n).trim();\n\nif (!mensagem) {\n  return [{ json: { status: 'erro', mensagem: 'Não foi possível gerar o follow-up.' } }];\n}\n\nreturn [{ json: { status: 'ok', mensagem } }];\n"
+      },
+      "id": "formatar-resposta",
+      "name": "Formatar Resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1180, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          { "node": "Preparar Input", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Preparar Input": {
+      "main": [
+        [
+          { "node": "Sub - Gerar Follow-up Inteligente", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Sub - Gerar Follow-up Inteligente": {
+      "main": [
+        [
+          { "node": "Formatar Resposta", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Formatar Resposta": {
+      "main": [
+        [
+          { "node": "Respond to Webhook", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "api" },
+    { "name": "followup" },
+    { "name": "webhook" }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2026-04-10T00:00:00.000Z",
+  "versionId": "1"
+}

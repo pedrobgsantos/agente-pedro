@@ -1,0 +1,317 @@
+{
+  "name": "API - Decision Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "decidir-acoes",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "decidir-acoes"
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $vars.WORKFLOW_ID_PIPELINE }}",
+        "workflowInputs": {
+          "values": []
+        }
+      },
+      "id": "node-exec-pipeline",
+      "name": "consultar_pipeline",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        460,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $vars.WORKFLOW_ID_TAREFAS }}",
+        "workflowInputs": {
+          "values": []
+        }
+      },
+      "id": "node-exec-tarefas",
+      "name": "consultar_tarefas",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        460,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// normalize_data\nconst pipelineItems = $('consultar_pipeline').all();\nconst tarefasItems = $('consultar_tarefas').all();\n\nfunction norm(val) {\n  if (val === null || val === undefined) return '';\n  return String(val).toLowerCase().trim();\n}\n\nfunction parseDate(val) {\n  if (!val) return null;\n  const d = new Date(val);\n  return isNaN(d.getTime()) ? null : d;\n}\n\nfunction daysDiff(dateA, dateB) {\n  if (!dateA || !dateB) return null;\n  const msPerDay = 1000 * 60 * 60 * 24;\n  return Math.floor((dateB - dateA) / msPerDay);\n}\n\nconst today = new Date();\ntoday.setHours(0, 0, 0, 0);\n\nconst pipeline = pipelineItems.map(item => {\n  const row = item.json;\n  const dataInicioStatus = parseDate(row.data_inicio_status);\n  const dataFollowup = parseDate(row.data_followup_realizado);\n  return {\n    id_followup: (row.id_followup !== null && row.id_followup !== undefined) ? String(row.id_followup).trim() : '',\n    parceiro: (row.parceiro || '').trim(),\n    ponto_focal: (row.ponto_focal || '').trim(),\n    produto: (row.produto || '').trim(),\n    status: (row.status || '').trim(),\n    status_followup: (row.status_followup || '').trim(),\n    parceiro_norm: norm(row.parceiro),\n    ponto_focal_norm: norm(row.ponto_focal),\n    produto_norm: norm(row.produto),\n    status_norm: norm(row.status),\n    status_followup_norm: norm(row.status_followup),\n    data_inicio_status: dataInicioStatus,\n    data_followup_realizado: dataFollowup,\n    ultima_cadencia_feita: (row.ultima_cadencia_feita || '').trim(),\n    resumo_negociacao: (row.resumo_negociacao || '').trim(),\n    observacoes_gerais: (row.observacoes_gerais || '').trim(),\n    _days_in_status: dataInicioStatus ? daysDiff(dataInicioStatus, today) : null,\n    _days_since_followup: dataFollowup ? daysDiff(dataFollowup, today) : null,\n  };\n});\n\nconst tarefas = tarefasItems.map(item => {\n  const row = item.json;\n  const prazo = parseDate(row.prazo);\n  return {\n    id: (row.id !== null && row.id !== undefined) ? String(row.id).trim() : '',\n    titulo: (row.titulo || '').trim(),\n    prazo: prazo,\n    observacao: (row.observacao || '').trim(),\n    status: (row.status || '').trim(),\n    status_norm: norm(row.status),\n    _days_until_due: prazo ? daysDiff(today, prazo) : null,\n  };\n});\n\nreturn [{ json: { pipeline, tarefas } }];\n"
+      },
+      "id": "node-normalize",
+      "name": "normalize_data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// score_pipeline\nconst { pipeline, tarefas } = $input.first().json;\n\nconst SLA = {\n  'aguardando proposta': 7,\n  'compliance': 3,\n  'minuta com cliente': 7,\n  'juridico': 10,\n  'fechamento': 3,\n};\n\nfunction scorePipeline(item) {\n  let score = 0;\n  const motivo = [];\n\n  const sla = SLA[item.status_norm] || null;\n  const daysInStatus = item._days_in_status;\n  const daysSinceFollowup = item._days_since_followup;\n  const statusFollowup = item.status_followup_norm;\n\n  if (sla !== null && daysInStatus !== null) {\n    if (daysInStatus > sla + 7) {\n      score += 5;\n      motivo.push(`Status \"${item.status}\" excedeu SLA em mais de 7 dias (${daysInStatus} dias)`);\n    } else if (daysInStatus > sla + 3) {\n      score += 3;\n      motivo.push(`Status \"${item.status}\" excedeu SLA em mais de 3 dias (${daysInStatus} dias)`);\n    } else if (daysInStatus > sla) {\n      score += 2;\n      motivo.push(`Status \"${item.status}\" acima do SLA (${daysInStatus}/${sla} dias)`);\n    }\n  }\n\n  if (daysSinceFollowup === null) {\n    score += 2;\n    motivo.push('Nenhum follow-up registrado');\n  } else if (daysSinceFollowup >= 7) {\n    score += 3;\n    motivo.push(`Último follow-up há ${daysSinceFollowup} dias (≥7)`);\n  } else if (daysSinceFollowup >= 3) {\n    score += 2;\n    motivo.push(`Último follow-up há ${daysSinceFollowup} dias (≥3)`);\n  }\n\n  if (item.status_norm === 'fechamento') {\n    score += 3;\n    motivo.push('Status em fechamento — alta prioridade');\n  }\n  if (item.status_norm === 'compliance') {\n    score += 2;\n    motivo.push('Status em compliance — requer atenção');\n  }\n\n  if (statusFollowup === 'late' || statusFollowup === 'atrasado') {\n    score += 4;\n    motivo.push('Follow-up está atrasado');\n  } else if (statusFollowup === 'pending' || statusFollowup === 'pendente') {\n    score += 2;\n    motivo.push('Follow-up pendente');\n  }\n\n  return { ...item, score, motivo };\n}\n\nconst scoredPipeline = pipeline.map(scorePipeline);\n\nreturn [{ json: { pipeline: scoredPipeline, tarefas } }];\n"
+      },
+      "id": "node-score-pipeline",
+      "name": "score_pipeline",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// score_tasks\nconst { pipeline, tarefas } = $input.first().json;\n\nfunction scoreTarefa(item) {\n  let score = 0;\n  const motivo = [];\n  const daysUntilDue = item._days_until_due;\n  const status = item.status_norm;\n  let risco = 'baixo';\n\n  if (daysUntilDue !== null && daysUntilDue < 0) {\n    score += 5;\n    risco = 'alto';\n    motivo.push(`Tarefa vencida há ${Math.abs(daysUntilDue)} dia(s)`);\n  } else if (daysUntilDue === 0) {\n    score += 4;\n    risco = 'medio';\n    motivo.push('Tarefa vence hoje');\n  }\n\n  if (status === 'em andamento' || status === 'in_progress' || status === 'in progress') {\n    score += 2;\n    motivo.push('Tarefa em andamento');\n  } else if (status === 'pendente' || status === 'pending') {\n    score += 1;\n    motivo.push('Tarefa pendente');\n  }\n\n  return { ...item, score, motivo, risco };\n}\n\nconst scoredTarefas = tarefas.map(scoreTarefa);\n\nreturn [{ json: { pipeline, tarefas: scoredTarefas } }];\n"
+      },
+      "id": "node-score-tasks",
+      "name": "score_tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// merge_and_prioritize\nconst { pipeline, tarefas } = $input.first().json;\n\nconst SLA = {\n  'aguardando proposta': 7,\n  'compliance': 3,\n  'minuta com cliente': 7,\n  'juridico': 10,\n  'fechamento': 3,\n};\n\nfunction getBucket(score) {\n  if (score >= 6) return 'agora';\n  if (score >= 3) return 'hoje';\n  return 'podeEsperar';\n}\n\nfunction getImpacto(score) {\n  if (score >= 8) return 'alto';\n  if (score >= 4) return 'medio';\n  return 'baixo';\n}\n\nfunction needsFollowup(item) {\n  const sf = item.status_followup_norm;\n  const daysSince = item._days_since_followup;\n  if (sf === 'late' || sf === 'atrasado') return true;\n  if (sf === 'pending' || sf === 'pendente') return true;\n  if (daysSince === null) return true;\n  if (daysSince >= 3) return true;\n  return false;\n}\n\nfunction getPipelineRisco(item) {\n  const sla = SLA[item.status_norm] || null;\n  const daysInStatus = item._days_in_status;\n  if (sla !== null && daysInStatus !== null) {\n    if (daysInStatus > sla + 7) return 'alto';\n    if (daysInStatus > sla) return 'medio';\n  }\n  return 'baixo';\n}\n\nfunction getNextBestAction(tipo, action_type, status_norm, bucket) {\n  const urgencia = bucket === 'agora' ? 'alta' : bucket === 'hoje' ? 'media' : 'baixa';\n  if (tipo === 'tarefa') {\n    return { tipo: 'execucao', canal: 'crm', objetivo: 'executar tarefa', urgencia };\n  }\n  if (action_type === 'check_pipeline') {\n    return { tipo: 'analise', canal: 'crm', objetivo: 'revisar negociacao', urgencia };\n  }\n  const objetivoMap = {\n    'aguardando proposta': 'destravar proposta',\n    'compliance': 'acelerar compliance',\n    'juridico': 'cobrar devolutiva juridica',\n    'fechamento': 'avancar fechamento',\n  };\n  const objetivo = objetivoMap[status_norm] || 'avancar negociacao';\n  return { tipo: 'followup', canal: 'whatsapp', objetivo, urgencia };\n}\n\nconst actions = [];\n\nfor (const item of pipeline) {\n  const risco = getPipelineRisco(item);\n  let boostedScore = item.score;\n  if (risco === 'alto') boostedScore += 3;\n  else if (risco === 'medio') boostedScore += 1;\n\n  const bucket = getBucket(boostedScore);\n  const impacto = getImpacto(boostedScore);\n  const requiresFollowup = needsFollowup(item);\n  const action_type = requiresFollowup ? 'followup' : 'check_pipeline';\n  const next_best_action = getNextBestAction('pipeline', action_type, item.status_norm, bucket);\n\n  const contato = item.ponto_focal || item.parceiro || 'responsável';\n\n  const titulo = action_type === 'followup'\n    ? `Follow-up: ${item.parceiro} — ${item.produto}`\n    : `Analisar negociação: ${item.parceiro} — ${item.produto}`;\n\n  const acao_recomendada = action_type === 'followup'\n    ? `Enviar follow-up para ${contato} sobre ${item.produto}`\n    : `Verificar andamento da negociação com ${item.parceiro}`;\n\n  const tempo_estimado = action_type === 'followup' ? '2 min' : '5 min';\n\n  const action = {\n    id: item.id_followup,\n    tipo: 'pipeline',\n    action_type,\n    parceiro: item.parceiro,\n    titulo,\n    motivo: item.motivo,\n    impacto,\n    risco,\n    bucket,\n    score: boostedScore,\n    tempo_estimado,\n    acao_recomendada,\n    next_best_action,\n    _requiresFollowup: requiresFollowup,\n    _raw: item,\n  };\n\n  actions.push(action);\n}\n\nfor (const item of tarefas) {\n  const bucket = getBucket(item.score);\n  const impacto = getImpacto(item.score);\n  const risco = item.risco || 'baixo';\n  const next_best_action = getNextBestAction('tarefa', 'execucao', null, bucket);\n  const daysUntilDue = item._days_until_due;\n  const tempo_estimado = (daysUntilDue !== null && daysUntilDue <= 0) ? '10 min' : '5 min';\n\n  const action = {\n    id: item.id,\n    tipo: 'tarefa',\n    action_type: 'execucao',\n    titulo: item.titulo,\n    motivo: item.motivo,\n    impacto,\n    risco,\n    bucket,\n    score: item.score,\n    tempo_estimado,\n    acao_recomendada: `Executar tarefa: ${item.titulo}`,\n    next_best_action,\n    _requiresFollowup: false,\n    _raw: item,\n  };\n\n  actions.push(action);\n}\n\nactions.sort((a, b) => b.score - a.score);\n\nconst agoraAll = actions.filter(a => a.bucket === 'agora');\nconst hojeAll = actions.filter(a => a.bucket === 'hoje');\nconst podeEsperarAll = actions.filter(a => a.bucket === 'podeEsperar');\n\nconst agora = agoraAll.slice(0, 5);\nconst hoje = hojeAll.slice(0, 10);\nconst podeEsperar = podeEsperarAll.slice(0, 10);\n\nconst has_followup_actions = actions.some(a => a._requiresFollowup);\n\nreturn [{ json: {\n  actions,\n  agora,\n  hoje,\n  podeEsperar,\n  has_followup_actions,\n  total_agora_original: agoraAll.length,\n  total_hoje_original: hojeAll.length,\n  total_podeEsperar_original: podeEsperarAll.length,\n} }];\n"
+      },
+      "id": "node-merge",
+      "name": "merge_and_prioritize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// filtrar_followups\nconst data = $input.first().json;\nconst all = [...(data.agora || []), ...(data.hoje || []), ...(data.podeEsperar || [])];\nfunction isFollowup(a) {\n  return a._requiresFollowup === true || a._requiresFollowup === 'true';\n}\nconst followups = all.filter(isFollowup);\nconst nonFollowups = all.filter(a => !isFollowup(a));\nreturn [{ json: { followups, nonFollowups, original: data } }];\n"
+      },
+      "id": "node-filtrar-followups",
+      "name": "filtrar_followups",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $vars.WORKFLOW_ID_FOLLOWUP }}",
+        "options": {
+          "waitForSubWorkflow": true
+        },
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "actions",
+              "stringValue": "={{ JSON.stringify($json.followups) }}"
+            }
+          ]
+        }
+      },
+      "id": "node-exec-followup",
+      "name": "gerar_followup_inteligente",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        1900,
+        300
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// build_response — branch WITH follow-up messages\nconst mergeData = $('merge_and_prioritize').first().json;\nlet followupResults = [];\n\ntry {\n  const fwItems = $('gerar_followup_inteligente').all();\n  followupResults = fwItems.map(i => i.json);\n} catch (e) {\n  followupResults = [];\n}\n\nconst followupMap = {};\nfor (const fw of followupResults) {\n  if (fw.id) followupMap[fw.id] = fw.mensagem_pronta || '';\n}\n\nfunction buildAction(action) {\n  const out = {\n    id: action.id,\n    tipo: action.tipo,\n    action_type: action.action_type,\n    titulo: action.titulo,\n    motivo: (action.motivo || []).slice(0, 3),\n    impacto: action.impacto,\n    risco: action.risco,\n    tempo_estimado: action.tempo_estimado,\n    acao_recomendada: action.acao_recomendada,\n    next_best_action: action.next_best_action,\n  };\n  if (action.tipo === 'pipeline') out.parceiro = action.parceiro;\n  if (action._requiresFollowup && followupMap[action.id]) {\n    out.mensagem_pronta = followupMap[action.id];\n  }\n  return out;\n}\n\nconst response = {\n  status: 'ok',\n  resumo: {\n    agora: mergeData.agora.length,\n    hoje: mergeData.hoje.length,\n    podeEsperar: mergeData.podeEsperar.length,\n    total_agora_original: mergeData.total_agora_original,\n    total_hoje_original: mergeData.total_hoje_original,\n    total_podeEsperar_original: mergeData.total_podeEsperar_original,\n  },\n  agora: mergeData.agora.map(buildAction),\n  hoje: mergeData.hoje.map(buildAction),\n  podeEsperar: mergeData.podeEsperar.map(buildAction),\n};\n\nreturn [{ json: response }];\n"
+      },
+      "id": "node-build-response-fw",
+      "name": "build_response (with followup)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2140,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "node-respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2380,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "consultar_pipeline",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "consultar_tarefas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "consultar_pipeline": {
+      "main": [
+        [
+          {
+            "node": "normalize_data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "consultar_tarefas": {
+      "main": [
+        [
+          {
+            "node": "normalize_data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "normalize_data": {
+      "main": [
+        [
+          {
+            "node": "score_pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "score_pipeline": {
+      "main": [
+        [
+          {
+            "node": "score_tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "score_tasks": {
+      "main": [
+        [
+          {
+            "node": "merge_and_prioritize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "merge_and_prioritize": {
+      "main": [
+        [
+          {
+            "node": "filtrar_followups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "filtrar_followups": {
+      "main": [
+        [
+          {
+            "node": "gerar_followup_inteligente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gerar_followup_inteligente": {
+      "main": [
+        [
+          {
+            "node": "build_response (with followup)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "build_response (with followup)": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "decision-engine"
+    },
+    {
+      "name": "commercial"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-04-09T00:00:00.000Z",
+  "versionId": "1"
+}

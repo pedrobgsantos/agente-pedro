@@ -44,31 +44,13 @@
     },
     {
       "parameters": {
-        "jsCode": "const linhas = $input.all();\n\nconst limites = {\n  'aguardando proposta': 7,\n  'compliance': 3,\n  'minuta com cliente': 7,\n  'juridico': 10,\n  'fechamento': 3\n};\n\nconst hoje = new Date();\n\nconst parseData = (data) => {\n  if (!data) return null;\n  const [dia, mes, ano] = data.split('/');\n  return new Date(`${ano}-${mes}-${dia}`);\n};\n\nconst resultado = linhas.map(item => {\n  const d = item.json;\n\n  const status = (d.status || '').toLowerCase();\n  const dataInicio = parseData(d.data_inicio_status);\n\n  let dias = 0;\n  if (dataInicio) {\n    dias = Math.floor((hoje - dataInicio) / (1000 * 60 * 60 * 24));\n  }\n\n  const limite = limites[status] || 7;\n\n  let prioridade = 'ok';\n\n  if (dias > limite) prioridade = 'urgente';\n  else if (dias >= limite * 0.8) prioridade = 'atencao';\n\n  return {\n    parceiro: d.parceiro,\n    status,\n    dias,\n    prioridade\n  };\n});\n\nconst urgentes = resultado.filter(r => r.prioridade === 'urgente');\nconst atencao = resultado.filter(r => r.prioridade === 'atencao');\nconst ok = resultado.filter(r => r.prioridade === 'ok');\n\nreturn [{\n  json: {\n    urgentes,\n    atencao,\n    ok\n  }\n}];"
+        "jsCode": "const items = $input.all();\n// console.log('items:', items.length);\n\nfunction clean(val) {\n  if (val === null || val === undefined) return '';\n  return String(val).trim();\n}\n\nreturn items.map(item => {\n  const row = item.json;\n\n  return {\n    json: {\n      id_followup:             clean(row.id_followup) || `${Date.now()}-${Math.floor(Math.random()*1000)}`,\n      parceiro:                clean(row.parceiro),\n      ponto_focal:             clean(row.ponto_focal),\n      produto:                 clean(row.produto),\n      status:                  clean(row.status),\n      status_norm:             clean(row.status).toLowerCase(),\n      status_followup:         clean(row.status_followup),\n      status_followup_norm:    clean(row.status_followup).toLowerCase(),\n      data_inicio_status:      row.data_inicio_status ? String(row.data_inicio_status).trim() : null,\n      data_followup_realizado: row.data_followup_realizado ? String(row.data_followup_realizado).trim() : null,\n      ultima_cadencia_feita:   clean(row.ultima_cadencia_feita),\n      resumo_negociacao:       clean(row.resumo_negociacao),\n      observacoes_gerais:      clean(row.observacoes_gerais)\n    }\n  };\n});"
       },
       "id": "processar-pipeline",
       "name": "Processar Pipeline",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [860, 300]
-    },
-    {
-      "parameters": {
-        "values": {
-          "string": [
-            {
-              "name": "response",
-              "value": "={{ JSON.stringify({ status: 'ok', mensagem: 'Pipeline analisado com sucesso.', dados: $json }) }}"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "resposta-ok",
-      "name": "Resposta OK",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [1080, 300]
     }
   ],
   "connections": {
@@ -99,17 +81,6 @@
         [
           {
             "node": "Processar Pipeline",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Processar Pipeline": {
-      "main": [
-        [
-          {
-            "node": "Resposta OK",
             "type": "main",
             "index": 0
           }

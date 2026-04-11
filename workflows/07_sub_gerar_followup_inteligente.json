@@ -1,0 +1,154 @@
+{
+  "name": "Sub - Gerar Follow-up Inteligente",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "node-trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Input\n// Safely extract the 'actions' field from whatever shape the caller sends\nconst inputData = $input.first().json;\n\nconst rawActions =\n  (inputData.actions !== undefined && inputData.actions !== null)\n    ? inputData.actions\n    : (inputData.body && inputData.body.actions !== undefined ? inputData.body.actions : null);\n\nreturn [{ json: { rawActions: rawActions !== null ? rawActions : '' } }];\n"
+      },
+      "id": "node-parse-input",
+      "name": "Parse Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Actions\nconst { rawActions } = $input.first().json;\n\nlet actions = [];\n\ntry {\n  const parsed = typeof rawActions === 'string'\n    ? JSON.parse(rawActions)\n    : rawActions;\n\n  if (Array.isArray(parsed)) {\n    actions = parsed.filter(a => a && a.id);\n  }\n} catch (e) {\n  actions = [];\n}\n\nreturn [{ json: { actions } }];\n"
+      },
+      "id": "node-parse-actions",
+      "name": "Parse Actions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "actions",
+        "options": {}
+      },
+      "id": "node-split-out",
+      "name": "Split Out",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [940, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {
+          "temperature": 0.2,
+          "maxTokens": 200
+        }
+      },
+      "id": "node-openai-model",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [1180, 500],
+      "credentials": {
+        "openAiApi": {
+          "id": "1",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ 'Empresa: ' + ($json.parceiro || 'não informado') + '\\nContato: ' + ($json.ponto_focal || 'não informado') + '\\nProduto: ' + ($json.produto || 'não informado') + '\\nStatus: ' + ($json.status || 'não informado') + '\\nResumo: ' + ($json.resumo_negociacao || 'não disponível') + '\\nUrgência: ' + ($json.bucket || 'hoje') + '\\nRisco: ' + ($json.risco || 'baixo') + ($json.historico_interacoes ? '\\nHistórico: ' + $json.historico_interacoes : '') + ($json.ultima_cadencia_feita !== '' && $json.ultima_cadencia_feita !== undefined ? '\\nCadência (toque nº): ' + $json.ultima_cadencia_feita : '') + ($json.status_followup_norm && $json.status_followup_norm !== '' ? '\\nStatus do follow-up: ' + $json.status_followup_norm : '') + ($json.data_followup_realizado && $json.data_followup_realizado !== '' ? '\\nData do último follow-up: ' + $json.data_followup_realizado : '') }}",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "SystemMessage",
+              "message": "Você é um especialista em comunicação comercial B2B. Sua tarefa é escrever mensagens de follow-up para WhatsApp em português brasileiro.\n\nREGRAS OBRIGATÓRIAS:\n- Escreva apenas o texto final da mensagem, sem explicações, sem rótulos, sem aspas\n- Tom profissional e consultivo\n- Máximo 500 caracteres\n- Sem emojis, sem markdown, sem listas, sem bullet points\n- Use apenas as informações fornecidas — não invente fatos\n- Se \"Contato\" estiver disponível, dirija-se à pessoa pelo primeiro nome\n- Se não houver contato, use saudação genérica\n- Mencione a empresa e o produto quando disponíveis\n- Termine com uma CTA clara e direta\n\nOBJETIVO POR STATUS:\n- aguardando proposta → retomar análise e destravar retorno da proposta\n- compliance → verificar pendência e definir próximo passo\n- juridico → cobrar devolutiva da equipe jurídica\n- fechamento → incentivar conclusão e alinhamento final\n- outros → avançar a negociação para a próxima etapa\n\nAJUSTE DE URGÊNCIA:\n- urgência agora ou risco alto → CTA firme, senso de prazo implícito\n- urgência hoje ou risco medio → CTA consultiva, tom colaborativo\n- urgência podeEsperar ou risco baixo → CTA leve, tom disponível\n\nCADÊNCIA DE TOQUE (use \"Cadência (toque nº)\" se presente):\n- toque 0 ou ausente → tom leve e consultivo, apresentação do contexto\n- toque 1 → mais direto, referencia o contato anterior brevemente\n- toque 2 → objetivo e focado, CTA clara sem rodeios\n- toque ≥3 → tom respeitoso de encerramento, pergunta se ainda faz sentido avançar agora\n\nSTATUS DO FOLLOW-UP (use se presente):\n- pending/pendente → follow-up normal\n- late/atrasado → tom mais firme, senso de prazo\n- aguardando_retorno → tom colaborativo, evite parecer repetitivo\n\nESTRUTURA SUGERIDA: saudação → contexto breve → objetivo claro → CTA"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-llm-chain",
+      "name": "Basic LLM Chain",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [1180, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Normalize Output\n// Reads id from the paired Split Out item — no index-based matching\nconst rawText = String($input.item.json.text || $input.item.json.output || '').trim();\n\nconst fallback = 'Olá! Gostaria de retomar nossa conversa e alinhar os próximos passos.';\n\n// Paired item access: resolves to the Split Out item that produced this LLM output\nconst originalAction = $('Split Out').item.json;\nconst id = String(originalAction.id || '');\n\nif (!id) return;\n\nconst text = rawText.length > 0 ? rawText : fallback;\nconst mensagem = text.length > 500 ? text.substring(0, 497) + '...' : text;\n\nreturn { json: { id, mensagem_pronta: mensagem } };\n"
+      },
+      "id": "node-normalize-output",
+      "name": "Normalize Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1420, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          { "node": "Parse Input", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Parse Input": {
+      "main": [
+        [
+          { "node": "Parse Actions", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Parse Actions": {
+      "main": [
+        [
+          { "node": "Split Out", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          { "node": "Basic LLM Chain", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          { "node": "Basic LLM Chain", "type": "ai_languageModel", "index": 0 }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          { "node": "Normalize Output", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "decision-engine" },
+    { "name": "followup" },
+    { "name": "subworkflow" },
+    { "name": "llm" }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2026-04-09T00:00:00.000Z",
+  "versionId": "1"
+}

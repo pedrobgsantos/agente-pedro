@@ -44,31 +44,13 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst ativas = items.filter(item => {\n  const s = (item.json.status || '').toString().trim().toLowerCase();\n  return s !== 'concluída' && s !== 'concluida';\n});\nif (ativas.length === 0) {\n  return [{ json: { tarefas: [], total: 0 } }];\n}\nreturn [{ json: { tarefas: ativas.map(i => i.json), total: ativas.length } }];"
+        "jsCode": "const items = $input.all();\n// console.log('items:', items.length);\n\nfunction clean(val) {\n  if (val === null || val === undefined) return '';\n  return String(val).trim();\n}\n\nreturn items\n  .map(item => {\n    const row = item.json;\n    const status = clean(row.status).toLowerCase();\n\n    return {\n      json: {\n        id: clean(row.id) || `${Date.now()}-${Math.floor(Math.random()*1000)}`,\n        titulo: clean(row.titulo),\n        prazo: row.prazo || null,\n        observacao: clean(row.observacao),\n        status: clean(row.status),\n        status_norm: status\n      }\n    };\n  })\n  .filter(item => {\n    return item.json.status_norm !== 'concluída' &&\n           item.json.status_norm !== 'concluida';\n  });"
       },
       "id": "filtrar-agregar",
-      "name": "Filtrar e Agregar",
+      "name": "Filtrar Tarefas Ativas",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [860, 300]
-    },
-    {
-      "parameters": {
-        "values": {
-          "string": [
-            {
-              "name": "response",
-              "value": "={{ JSON.stringify({ status: 'ok', mensagem: $json.total === 0 ? 'Nenhuma tarefa pendente.' : $json.total + ' tarefa(s) ativa(s) encontrada(s).', dados: $json.tarefas }) }}"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "resposta",
-      "name": "Formatar Resposta",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [1080, 300]
     }
   ],
   "connections": {
@@ -98,18 +80,7 @@
       "main": [
         [
           {
-            "node": "Filtrar e Agregar",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Filtrar e Agregar": {
-      "main": [
-        [
-          {
-            "node": "Formatar Resposta",
+            "node": "Filtrar Tarefas Ativas",
             "type": "main",
             "index": 0
           }
