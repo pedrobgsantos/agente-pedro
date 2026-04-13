@@ -9,7 +9,10 @@
       "name": "Execute Workflow Trigger",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
-      "position": [200, 300]
+      "position": [
+        200,
+        300
+      ]
     },
     {
       "parameters": {
@@ -19,7 +22,10 @@
       "name": "Parse Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [420, 300]
+      "position": [
+        420,
+        300
+      ]
     },
     {
       "parameters": {
@@ -48,7 +54,10 @@
       "name": "Validar Campos",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [640, 300]
+      "position": [
+        640,
+        300
+      ]
     },
     {
       "parameters": {
@@ -80,7 +89,10 @@
       "name": "Google Sheets - Criar",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [880, 200]
+      "position": [
+        880,
+        200
+      ]
     },
     {
       "parameters": {
@@ -98,7 +110,10 @@
       "name": "Resposta OK",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [1120, 200]
+      "position": [
+        1340,
+        200
+      ]
     },
     {
       "parameters": {
@@ -116,7 +131,44 @@
       "name": "Resposta Erro",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [880, 420]
+      "position": [
+        880,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "UoBwxtYLZH8XtUoa",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "entidade": "tarefa",
+            "entidade_id": "={{ $('Google Sheets - Criar').item.json.id }}",
+            "acao": "criar",
+            "campo": "",
+            "valor_antes": "",
+            "valor_depois": "={{ $('Parse Input').item.json.titulo }}",
+            "origem": "agente-pedro"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "id": "log-evento",
+      "name": "Log Evento",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        1120,
+        200
+      ]
     }
   ],
   "connections": {
@@ -161,6 +213,17 @@
       ]
     },
     "Google Sheets - Criar": {
+      "main": [
+        [
+          {
+            "node": "Log Evento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Evento": {
       "main": [
         [
           {

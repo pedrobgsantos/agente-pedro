@@ -9,7 +9,10 @@
       "name": "Execute Workflow Trigger",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
-      "position": [200, 300]
+      "position": [
+        200,
+        300
+      ]
     },
     {
       "parameters": {
@@ -19,7 +22,10 @@
       "name": "Parse Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [420, 300]
+      "position": [
+        420,
+        300
+      ]
     },
     {
       "parameters": {
@@ -29,7 +35,10 @@
       "name": "Normalizar e Validar",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [640, 300]
+      "position": [
+        640,
+        300
+      ]
     },
     {
       "parameters": {
@@ -58,7 +67,10 @@
       "name": "Validação OK?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [860, 300]
+      "position": [
+        860,
+        300
+      ]
     },
     {
       "parameters": {
@@ -79,7 +91,10 @@
       "name": "Google Sheets - Ler",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [1080, 160]
+      "position": [
+        1080,
+        160
+      ]
     },
     {
       "parameters": {
@@ -89,7 +104,10 @@
       "name": "Resolver Negociação",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1300, 160]
+      "position": [
+        1300,
+        160
+      ]
     },
     {
       "parameters": {
@@ -118,7 +136,10 @@
       "name": "Sucesso?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [1520, 160]
+      "position": [
+        1520,
+        160
+      ]
     },
     {
       "parameters": {
@@ -128,7 +149,10 @@
       "name": "Preparar Update",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1740, 60]
+      "position": [
+        1740,
+        60
+      ]
     },
     {
       "parameters": {
@@ -145,7 +169,9 @@
         },
         "columns": {
           "mappingMode": "autoMapInputData",
-          "matchingColumns": ["id"]
+          "matchingColumns": [
+            "id"
+          ]
         },
         "options": {}
       },
@@ -153,7 +179,10 @@
       "name": "Google Sheets - Atualizar",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [1960, 60]
+      "position": [
+        1960,
+        60
+      ]
     },
     {
       "parameters": {
@@ -171,7 +200,10 @@
       "name": "Resposta OK",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [2180, 60]
+      "position": [
+        2400,
+        60
+      ]
     },
     {
       "parameters": {
@@ -189,7 +221,44 @@
       "name": "Resposta Erro",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [1300, 460]
+      "position": [
+        1300,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "UoBwxtYLZH8XtUoa",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "entidade": "negociacao",
+            "entidade_id": "={{ $('Resolver Negociação').item.json.id }}",
+            "acao": "atualizar_status",
+            "campo": "status",
+            "valor_antes": "",
+            "valor_depois": "={{ $('Resolver Negociação').item.json.status_novo }}",
+            "origem": "agente-pedro"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "id": "log-evento",
+      "name": "Log Evento",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        2180,
+        60
+      ]
     }
   ],
   "connections": {
@@ -296,6 +365,17 @@
       ]
     },
     "Google Sheets - Atualizar": {
+      "main": [
+        [
+          {
+            "node": "Log Evento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Evento": {
       "main": [
         [
           {

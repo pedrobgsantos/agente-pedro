@@ -130,7 +130,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1340,
+        1560,
         200
       ]
     },
@@ -153,6 +153,40 @@
       "position": [
         1100,
         420
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "UoBwxtYLZH8XtUoa",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "entidade": "negociacao",
+            "entidade_id": "={{ $('Google Sheets - Registrar').item.json.id_followup }}",
+            "acao": "criar",
+            "campo": "",
+            "valor_antes": "",
+            "valor_depois": "={{ $('Normalizar e Validar').item.json.status }}",
+            "origem": "agente-pedro"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "id": "log-evento",
+      "name": "Log Evento",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        1340,
+        200
       ]
     }
   ],
@@ -209,6 +243,17 @@
       ]
     },
     "Google Sheets - Registrar": {
+      "main": [
+        [
+          {
+            "node": "Log Evento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Evento": {
       "main": [
         [
           {
