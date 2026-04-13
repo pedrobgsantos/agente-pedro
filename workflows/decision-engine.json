@@ -9,7 +9,7 @@
         "options": {}
       },
       "id": "node-webhook",
-      "name": "Webhook",
+      "name": "Webhook (manual)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
       "position": [
@@ -177,25 +177,67 @@
         2380,
         300
       ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 4
+            }
+          ]
+        }
+      },
+      "id": "node-schedule",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://rsyvaviwzlhfncufutoa.supabase.co/rest/v1/decision_engine_cache",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzeXZhdml3emxoZm5jdWZ1dG9hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNTg3ODksImV4cCI6MjA5MTYzNDc4OX0.n54iwErxsXPHPVFm09ay2VuPtmXgxp20HLMKXGu1-VQ"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzeXZhdml3emxoZm5jdWZ1dG9hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNTg3ODksImV4cCI6MjA5MTYzNDc4OX0.n54iwErxsXPHPVFm09ay2VuPtmXgxp20HLMKXGu1-VQ"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ resultado: $json }) }}"
+      },
+      "id": "node-save-supabase",
+      "name": "Salvar no Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2380,
+        140
+      ]
     }
   ],
   "connections": {
-    "Webhook": {
-      "main": [
-        [
-          {
-            "node": "consultar_pipeline",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "consultar_tarefas",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "consultar_pipeline": {
       "main": [
         [
@@ -289,6 +331,43 @@
         [
           {
             "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Salvar no Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "consultar_pipeline",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "consultar_tarefas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook (manual)": {
+      "main": [
+        [
+          {
+            "node": "consultar_pipeline",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "consultar_tarefas",
             "type": "main",
             "index": 0
           }
