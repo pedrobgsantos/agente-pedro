@@ -9,7 +9,10 @@
       "name": "Execute Workflow Trigger",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
-      "position": [200, 300]
+      "position": [
+        200,
+        300
+      ]
     },
     {
       "parameters": {
@@ -19,17 +22,23 @@
       "name": "Parse Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [420, 300]
+      "position": [
+        420,
+        300
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const input = $('Parse Input').item.json;\n\nconst parceiro = (input.parceiro || '').toString().trim();\nconst produto = (input.produto || '').toString().trim();\nconst statusRaw = (input.status || '').toString().trim().toLowerCase();\n\nif (!parceiro) return [{ json: { _ok: false, codigo: 'CAMPO_FALTANDO', mensagem: 'Campo obrigatório ausente: parceiro.' } }];\nif (!produto) return [{ json: { _ok: false, codigo: 'CAMPO_FALTANDO', mensagem: 'Campo obrigatório ausente: produto.' } }];\nif (!statusRaw) return [{ json: { _ok: false, codigo: 'CAMPO_FALTANDO', mensagem: 'Campo obrigatório ausente: status.' } }];\n\nconst mapaStatus = {\n  compliance: 'compliance',\n  'em compliance': 'compliance',\n  proposta: 'proposta',\n  negociacao: 'negociacao',\n  'negociação': 'negociacao',\n  fechado: 'fechado',\n  ganho: 'fechado',\n  perdido: 'perdido'\n};\n\nconst statusNorm = mapaStatus[statusRaw] || statusRaw;\n\nreturn [{\n  json: {\n    _ok: true,\n    parceiro,\n    produto,\n    status: statusNorm,\n    ponto_focal: input.ponto_focal || '',\n    resumo_negociacao: input.resumo_negociacao || '',\n    observacoes_gerais: input.observacoes_gerais || ''\n  }\n}];"
+        "jsCode": "const input = $('Parse Input').item.json;\n\nconst parceiro = (input.parceiro || '').toString().trim();\nconst produto = (input.produto || '').toString().trim();\nconst statusRaw = (input.status || '').toString().trim().toLowerCase();\n\nif (!parceiro) return [{ json: { _ok: false, codigo: 'CAMPO_FALTANDO', mensagem: 'Campo obrigatório ausente: parceiro.' } }];\nif (!produto) return [{ json: { _ok: false, codigo: 'CAMPO_FALTANDO', mensagem: 'Campo obrigatório ausente: produto.' } }];\nif (!statusRaw) return [{ json: { _ok: false, codigo: 'CAMPO_FALTANDO', mensagem: 'Campo obrigatório ausente: status.' } }];\n\nconst mapaStatus = {\n  compliance: 'compliance',\n  'em compliance': 'compliance',\n  proposta: 'proposta',\n  negociacao: 'negociacao',\n  'negociação': 'negociacao',\n  fechado: 'fechado',\n  ganho: 'fechado',\n  perdido: 'perdido'\n};\n\nconst statusNorm = mapaStatus[statusRaw] || statusRaw;\n\nreturn [{\n  json: {\n    _ok: true,\n    parceiro,\n    produto,\n    status: statusNorm,\n    ponto_focal: input.ponto_focal || '',\n    resumo_negociacao: input.resumo_negociacao || '',\n    observacoes_gerais: input.observacoes_gerais || '',\n    status_followup: input.status_followup || 'pendente',\n    data_followup_realizado: input.data_followup_realizado || '',\n    ultima_cadencia_feita: input.ultima_cadencia_feita || '0',\n    proximo_followup: input.proximo_followup || ''\n  }\n}];"
       },
       "id": "normalizar-validar",
       "name": "Normalizar e Validar",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [640, 300]
+      "position": [
+        640,
+        300
+      ]
     },
     {
       "parameters": {
@@ -58,7 +67,10 @@
       "name": "Validação OK?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [860, 300]
+      "position": [
+        860,
+        300
+      ]
     },
     {
       "parameters": {
@@ -76,14 +88,18 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "id": "={{ $guid }}",
+            "id_followup": "={{ $guid }}",
             "parceiro": "={{ $('Normalizar e Validar').item.json.parceiro }}",
             "ponto_focal": "={{ $('Normalizar e Validar').item.json.ponto_focal || '' }}",
             "produto": "={{ $('Normalizar e Validar').item.json.produto }}",
             "status": "={{ $('Normalizar e Validar').item.json.status }}",
+            "status_followup": "={{ $('Normalizar e Validar').item.json.status_followup }}",
+            "data_followup_realizado": "={{ $('Normalizar e Validar').item.json.data_followup_realizado }}",
+            "ultima_cadencia_feita": "={{ $('Normalizar e Validar').item.json.ultima_cadencia_feita }}",
+            "proximo_followup": "={{ $('Normalizar e Validar').item.json.proximo_followup }}",
             "resumo_negociacao": "={{ $('Normalizar e Validar').item.json.resumo_negociacao || '' }}",
             "observacoes_gerais": "={{ $('Normalizar e Validar').item.json.observacoes_gerais || '' }}",
-            "data_registro": "={{ $now.format('dd/MM/yyyy') }}"
+            "data_inicio_status": "={{ $now.format('dd/MM/yyyy') }}"
           }
         },
         "options": {}
@@ -92,7 +108,10 @@
       "name": "Google Sheets - Registrar",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [1100, 200]
+      "position": [
+        1100,
+        200
+      ]
     },
     {
       "parameters": {
@@ -110,7 +129,10 @@
       "name": "Resposta OK",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [1340, 200]
+      "position": [
+        1340,
+        200
+      ]
     },
     {
       "parameters": {
@@ -128,7 +150,10 @@
       "name": "Resposta Erro",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [1100, 420]
+      "position": [
+        1100,
+        420
+      ]
     }
   ],
   "connections": {
