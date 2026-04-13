@@ -11,7 +11,10 @@
       "name": "Chat Trigger",
       "type": "@n8n/n8n-nodes-langchain.chatTrigger",
       "typeVersion": 1.1,
-      "position": [200, 300],
+      "position": [
+        200,
+        300
+      ],
       "webhookId": "pedro-agent-chat"
     },
     {
@@ -25,7 +28,10 @@
       "name": "AI Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
-      "position": [480, 300]
+      "position": [
+        480,
+        300
+      ]
     },
     {
       "parameters": {
@@ -38,17 +44,10 @@
       "name": "OpenAI Chat Model",
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1,
-      "position": [380, 500]
-    },
-    {
-      "parameters": {
-        "contextWindowLength": 16000
-      },
-      "id": "memory",
-      "name": "Window Buffer Memory",
-      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
-      "typeVersion": 1.3,
-      "position": [560, 500]
+      "position": [
+        380,
+        500
+      ]
     },
     {
       "parameters": {
@@ -83,7 +82,10 @@
       "name": "Tool Criar Tarefa",
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2,
-      "position": [260, 700]
+      "position": [
+        260,
+        700
+      ]
     },
     {
       "parameters": {
@@ -106,7 +108,10 @@
       "name": "Tool Consultar Tarefas",
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2,
-      "position": [400, 700]
+      "position": [
+        400,
+        700
+      ]
     },
     {
       "parameters": {
@@ -141,7 +146,10 @@
       "name": "Tool Atualizar Tarefa",
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2,
-      "position": [540, 700]
+      "position": [
+        540,
+        700
+      ]
     },
     {
       "parameters": {
@@ -194,7 +202,10 @@
       "name": "Tool Registrar Negociação",
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2,
-      "position": [680, 700]
+      "position": [
+        680,
+        700
+      ]
     },
     {
       "parameters": {
@@ -217,7 +228,10 @@
       "name": "Tool Consultar Pipeline",
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2,
-      "position": [820, 700]
+      "position": [
+        820,
+        700
+      ]
     },
     {
       "parameters": {
@@ -246,7 +260,30 @@
       "name": "Tool Atualizar Negociação",
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2,
-      "position": [960, 700]
+      "position": [
+        960,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.sessionId ?? $json.chatInput ?? \"default\" }}",
+        "tableName": "session_messages"
+      },
+      "id": "supabase-memory",
+      "name": "Supabase Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memorySupabase",
+      "typeVersion": 1,
+      "position": [
+        560,
+        500
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "name": "Supabase account"
+        }
+      }
     }
   ],
   "connections": {
@@ -267,17 +304,6 @@
           {
             "node": "AI Agent",
             "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Window Buffer Memory": {
-      "ai_memory": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_memory",
             "index": 0
           }
         ]
@@ -344,6 +370,17 @@
           {
             "node": "AI Agent",
             "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
             "index": 0
           }
         ]
