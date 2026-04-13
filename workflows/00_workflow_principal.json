@@ -3,272 +3,371 @@
   "nodes": [
     {
       "parameters": {
-        "public": false,
-        "initialMessages": "=Olá! Sou o Pedro, seu assistente executivo. Como posso ajudar?",
-        "options": {}
-      },
-      "id": "chat-trigger",
-      "name": "Chat Trigger",
-      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
-      "typeVersion": 1.1,
-      "position": [
-        200,
-        300
-      ],
-      "webhookId": "pedro-agent-chat"
-    },
-    {
-      "parameters": {
-        "options": {
-          "systemMessage": "=`# DATA ATUAL\nHoje é ${$now.format('dd/MM/yyyy')}. Amanhã é ${$now.plus({days: 1}).format('dd/MM/yyyy')}.\n\n# IDENTIDADE\nVocê é Pedro, assistente executivo.\nSeu papel é EXECUTAR tarefas, não apenas interpretar.\nVocê opera dentro do n8n com acesso a tools específicas.\n\n# REGRA ABSOLUTA: PARSING OBRIGATÓRIO\nANTES de chamar qualquer tool, você DEVE:\n1. Identificar QUAL tool será usada\n2. Extrair TODOS os campos obrigatórios da mensagem do usuário\n3. Montar o JSON com os campos corretos\n4. SÓ ENTÃO chamar a tool\n\nNUNCA envie o campo 'query' com texto livre para nenhuma tool.\nSEMPRE envie campos estruturados conforme o schema de cada tool.\n\n# ROTEAMENTO SEMÂNTICO\nUse esta tabela para decidir qual tool chamar:\n\n| Palavra/Intenção              | Tool                      |\n|-------------------------------|---------------------------|\n| pauta, tarefa, pendência      | criar_tarefa              |\n| agenda, to-do, atividade      | criar_tarefa              |\n| ver tarefas, listar tarefas   | consultar_tarefas         |\n| concluir, mudar prazo, obs    | atualizar_tarefa          |\n| negociação, deal, parceiro    | registrar_negociacao      |\n| pipeline, funil, negociações  | consultar_pipeline        |\n| mudar status negociação       | atualizar_negociacao      |\n\n# COLETA ANTES DE CRIAR TAREFA\nAntes de chamar criar_tarefa, confirme que tem:\n- titulo: OBRIGATÓRIO — extraído ou confirmado\n- prazo: RECOMENDADO — se não mencionado, pergunte UMA vez\n\nSe o usuário não informou prazo, diga naturalmente:\n\"Entendido. Qual o prazo para [titulo]? Se não tiver, é só dizer 'sem prazo'.\"\n\nSó chame criar_tarefa quando:\n1. Tiver o titulo confirmado\n2. O usuário tiver informado o prazo OU confirmado que não há prazo\nExceção: se a frase já tiver prazo claro (\"até amanhã\", \"pra sexta\"), crie direto.\n\n# CONTINUAÇÃO DE CONTEXTO\nANTES de tentar identificar uma nova intenção, verifique o histórico da conversa.\n\nSE sua última mensagem foi uma pergunta de coleta (ex: perguntou prazo de uma tarefa), trate a resposta do usuário como continuação direta — mesmo que seja uma palavra só.\n\nREGRA: mensagem curta após pergunta de prazo = resposta ao prazo.\n\nPADRÃO — prazo pendente:\nSe você perguntou \"Qual o prazo para [titulo]?\" e o usuário responde com:\n- expressão de tempo → converta para DD/MM/AAAA e chame criar_tarefa com titulo + prazo\n- negação ou ausência → chame criar_tarefa com titulo, sem prazo\n\nEXEMPLOS DE CONTINUAÇÃO:\nVocê: \"Qual o prazo para Ligar pro João?\"\nUsuário: \"amanhã\" → criar_tarefa { \"titulo\": \"Ligar pro João\", \"prazo\": \"${$now.plus({days: 1}).format('dd/MM/yyyy')}\" }\n\nVocê: \"Qual o prazo para Revisar contrato?\"\nUsuário: \"sexta\" → criar_tarefa { \"titulo\": \"Revisar contrato\", \"prazo\": \"[calcule próxima sexta]\" }\n\nVocê: \"Qual o prazo para Reunião com o time?\"\nUsuário: \"sem prazo\" → criar_tarefa { \"titulo\": \"Reunião com o time\" }\n\nVocê: \"Qual o prazo para Enviar proposta?\"\nUsuário: \"não tem\" → criar_tarefa { \"titulo\": \"Enviar proposta\" }\n\nNUNCA peça o prazo novamente se o usuário já respondeu.\nNUNCA trate \"amanhã\", \"sexta\", \"semana que vem\" como nova tarefa quando estiver aguardando prazo.\n\n# SCHEMAS DE CADA TOOL\n\n## Tool: criar_tarefa\nExtraia da mensagem:\n- titulo (OBRIGATÓRIO): nome da tarefa\n- prazo (opcional): data no formato DD/MM/AAAA\n- observacao (opcional): detalhes adicionais\n\nEXEMPLOS DE FRASES NATURAIS:\n\"coloca na pauta ligar pro João\" → { titulo: \"Ligar pro João\" } → pergunte prazo\n\"lembra de enviar o relatório até sexta\" → { titulo: \"Enviar relatório\", prazo: [calcule a sexta] }\n\"preciso revisar o contrato da Maxifar amanhã\" → { titulo: \"Revisar contrato Maxifar\", prazo: [amanhã] }\n\"agenda reunião com o time, sem urgência\" → { titulo: \"Reunião com o time\", observacao: \"sem urgência\" } → pergunte prazo\n\nCONVERSÃO DE DATAS RELATIVAS (use DATA ATUAL acima):\n- \"hoje\" → ${$now.format('dd/MM/yyyy')}\n- \"amanhã\" → ${$now.plus({days: 1}).format('dd/MM/yyyy')}\n- \"depois de amanhã\" → ${$now.plus({days: 2}).format('dd/MM/yyyy')}\n- \"sexta\" → calcule a próxima sexta-feira a partir de hoje\n- \"semana que vem\" → calcule a próxima segunda-feira\n- \"fim do mês\" → último dia do mês atual\nSempre converta para DD/MM/AAAA antes de enviar.\n\n## Tool: consultar_tarefas\nSem campos. Chame direto. Retorna apenas tarefas pendentes/em andamento.\n\n## Tool: atualizar_tarefa\nExtraia:\n- titulo (OBRIGATÓRIO): nome da tarefa\n- campo (OBRIGATÓRIO): status | prazo | observacao\n- novo_valor (OBRIGATÓRIO): novo valor\n\nTRADUÇÃO DE INTENÇÃO OBRIGATÓRIA:\n- \"concluir X\" → campo=status, novo_valor=concluída\n- \"adiar X pra 10/04\" → campo=prazo, novo_valor=10/04/2026\n- \"reabrir X\" → campo=status, novo_valor=pendente\n- \"adicionar obs em X: [texto]\" → campo=observacao, novo_valor=[texto]\n\n## Tool: registrar_negociacao\nExtraia:\n- parceiro (OBRIGATÓRIO): nome da empresa\n- ponto_focal (opcional): contato principal\n- produto (OBRIGATÓRIO): produto em negociação\n- status (OBRIGATÓRIO): etapa atual\n- resumo_negociacao (opcional): contexto\n- observacoes_gerais (opcional): notas extras\n\nATENÇÃO: o campo SEMPRE se chama 'parceiro'. Nunca use 'empresa' ou 'nome_empresa'.\n\n## Tool: consultar_pipeline\nSem campos. Chame direto. Retorna negociações ativas (exclui fechadas e perdidas).\n\n## Tool: atualizar_negociacao\nExtraia:\n- parceiro (OBRIGATÓRIO): nome do parceiro\n- status_novo (OBRIGATÓRIO): nova etapa\n\nExemplo: \"Maxifar entrou em compliance\"\nVocê monta: { \"parceiro\": \"Maxifar\", \"status_novo\": \"compliance\" }\nNUNCA envie: { \"query\": \"Maxifar: compliance\" }\n\n# TRATAMENTO DE ERROS\nQuando uma tool retornar erro, INTERPRETE o erro.\nNUNCA reexecute automaticamente. NUNCA entre em loop.\n\n| Código              | Sua ação                                |\n|---------------------|------------------------------------------|\n| CAMPO_FALTANDO      | Pergunte o campo que falta ao usuário    |\n| AMBIGUIDADE         | Liste opções e peça escolha              |\n| NAO_ENCONTRADO      | Informe e sugira verificar o nome        |\n| ERRO_PLANILHA       | Informe que houve erro técnico           |\n| DUPLICADO           | Informe e pergunte se quer atualizar     |\n| CAMPO_INVALIDO      | Informe campos aceitos e peça correção   |\n\nFormato: \"Não consegui [ação] porque [motivo]. Pode me informar [campo]?\"\n\n# MULTI-STEP\nSe o usuário pedir 2+ ações na mesma mensagem:\n1. Identifique TODAS as ações\n2. Monte o JSON de CADA uma separadamente\n3. Execute na ordem lógica\n4. Reporte resultado de cada uma\n\nExemplo: \"Fechei com Maxifar e pode concluir a tarefa de contrato\"\n→ Ação 1: atualizar_negociacao { \"parceiro\": \"Maxifar\", \"status_novo\": \"fechado\" }\n→ Ação 2: atualizar_tarefa { \"titulo\": \"contrato\", \"campo\": \"status\", \"novo_valor\": \"concluída\" }\n\n# COMPORTAMENTO\n1. Seja direto e conversacional, como um assistente de confiança.\n2. Confirme execução com: \"Feito: [ação realizada]\"\n3. Para criar tarefa: se o prazo não foi mencionado, pergunte antes de criar.\n4. Para qualquer outra informação faltando, pergunte UMA vez de forma natural.\n5. Nunca invente dados.\n6. Nunca reexecute tool que deu erro sem nova instrução do usuário.\n7. Converta SEMPRE datas relativas para DD/MM/AAAA usando a DATA ATUAL deste prompt.`",
-          "maxIterations": 10
-        }
-      },
-      "id": "ai-agent",
-      "name": "AI Agent",
-      "type": "@n8n/n8n-nodes-langchain.agent",
-      "typeVersion": 1.7,
-      "position": [
-        480,
-        300
-      ]
-    },
-    {
-      "parameters": {
-        "model": "gpt-4o",
-        "options": {
-          "temperature": 0.2
-        }
-      },
-      "id": "openai-model",
-      "name": "OpenAI Chat Model",
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
-      "typeVersion": 1,
-      "position": [
-        380,
-        500
-      ]
-    },
-    {
-      "parameters": {
         "name": "criar_tarefa",
         "description": "Cria uma nova tarefa. OBRIGATÓRIO enviar campo 'titulo'. Opcionais: 'prazo' (DD/MM/AAAA), 'observacao'.",
-        "workflowId": "={{ $env.WF_CRIAR_TAREFA }}",
-        "responsePropertyName": "response",
-        "fields": {
-          "values": [
+        "workflowId": {
+          "__rl": true,
+          "value": "I7G2PqYGTHnN7uRv",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/I7G2PqYGTHnN7uRv",
+          "cachedResultName": "Sub - Criar Tarefa"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "titulo": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('titulo', ``, 'string') }}",
+            "prazo": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('prazo', ``, 'string') }}",
+            "observacao": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('observacao', ``, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
             {
-              "name": "titulo",
-              "description": "Nome da tarefa a ser criada",
+              "id": "titulo",
+              "displayName": "titulo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
               "type": "string",
-              "required": true
+              "removed": false
             },
             {
-              "name": "prazo",
-              "description": "Data limite no formato DD/MM/AAAA",
+              "id": "prazo",
+              "displayName": "prazo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
               "type": "string",
-              "required": false
+              "removed": false
             },
             {
-              "name": "observacao",
-              "description": "Detalhes ou notas sobre a tarefa",
+              "id": "observacao",
+              "displayName": "observacao",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
               "type": "string",
-              "required": false
+              "removed": false
             }
-          ]
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
         }
       },
-      "id": "tool-criar-tarefa",
-      "name": "Tool Criar Tarefa",
+      "id": "63a611eb-f5eb-4b53-ab84-a6100f48ef41",
+      "name": "Tool Criar Tarefa1",
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2,
       "position": [
-        260,
-        700
+        -208,
+        1744
       ]
     },
     {
       "parameters": {
         "name": "consultar_tarefas",
         "description": "Consulta todas as tarefas pendentes e em andamento (exclui concluídas). Não requer parâmetros.",
-        "workflowId": "={{ $env.WF_CONSULTAR_TAREFAS }}",
-        "responsePropertyName": "response",
-        "fields": {
-          "values": [
-            {
-              "name": "vazio",
-              "description": "Não utilizar. Deixe vazio.",
-              "type": "string",
-              "required": false
-            }
-          ]
+        "workflowId": {
+          "__rl": true,
+          "value": "K3caa0uYq8uZJnRH",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/K3caa0uYq8uZJnRH",
+          "cachedResultName": "Sub - Consultar Tarefas"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
         }
       },
-      "id": "tool-consultar-tarefas",
-      "name": "Tool Consultar Tarefas",
+      "id": "6c650442-7dcc-4897-8630-455ce72b58a5",
+      "name": "Tool Consultar Tarefas1",
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2,
       "position": [
-        400,
-        700
+        -64,
+        1744
       ]
     },
     {
       "parameters": {
         "name": "atualizar_tarefa",
         "description": "Atualiza um campo de uma tarefa existente. OBRIGATÓRIO: 'titulo', 'campo' (status|prazo|observacao), 'novo_valor'. Para concluir tarefa: campo=status, novo_valor=concluída.",
-        "workflowId": "={{ $env.WF_ATUALIZAR_TAREFA }}",
-        "responsePropertyName": "response",
-        "fields": {
-          "values": [
+        "workflowId": {
+          "__rl": true,
+          "value": "SUQdEyY0z1QrK1TB",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/SUQdEyY0z1QrK1TB",
+          "cachedResultName": "Sub - Atualizar Tarefa"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "novo_valor": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('novo_valor', ``, 'string') }}",
+            "campo": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('campo', ``, 'string') }}",
+            "titulo": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('titulo', ``, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
             {
-              "name": "titulo",
-              "description": "Nome exato da tarefa a ser atualizada",
+              "id": "titulo",
+              "displayName": "titulo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
               "type": "string",
-              "required": true
+              "removed": false
             },
             {
-              "name": "campo",
-              "description": "Qual campo alterar: status, prazo ou observacao",
+              "id": "campo",
+              "displayName": "campo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
               "type": "string",
-              "required": true
+              "removed": false
             },
             {
-              "name": "novo_valor",
-              "description": "Novo valor para o campo",
+              "id": "novo_valor",
+              "displayName": "novo_valor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
               "type": "string",
-              "required": true
+              "removed": false
             }
-          ]
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
         }
       },
-      "id": "tool-atualizar-tarefa",
-      "name": "Tool Atualizar Tarefa",
+      "id": "dee99b22-8641-46d9-89e5-904ef9921c3a",
+      "name": "Tool Atualizar Tarefa1",
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2,
       "position": [
-        540,
-        700
-      ]
-    },
-    {
-      "parameters": {
-        "name": "registrar_negociacao",
-        "description": "Registra uma nova negociação no pipeline. OBRIGATÓRIO: 'parceiro', 'produto', 'status'. Opcionais: 'ponto_focal', 'resumo_negociacao', 'observacoes_gerais'. ATENÇÃO: use sempre 'parceiro', nunca 'empresa'.",
-        "workflowId": "={{ $env.WF_REGISTRAR_NEGOCIACAO }}",
-        "responsePropertyName": "response",
-        "fields": {
-          "values": [
-            {
-              "name": "parceiro",
-              "description": "Nome da empresa parceira",
-              "type": "string",
-              "required": true
-            },
-            {
-              "name": "ponto_focal",
-              "description": "Nome do contato principal",
-              "type": "string",
-              "required": false
-            },
-            {
-              "name": "produto",
-              "description": "Produto em negociação",
-              "type": "string",
-              "required": true
-            },
-            {
-              "name": "status",
-              "description": "Etapa atual da negociação",
-              "type": "string",
-              "required": true
-            },
-            {
-              "name": "resumo_negociacao",
-              "description": "Contexto e detalhes da negociação",
-              "type": "string",
-              "required": false
-            },
-            {
-              "name": "observacoes_gerais",
-              "description": "Notas extras ou pendências",
-              "type": "string",
-              "required": false
-            }
-          ]
-        }
-      },
-      "id": "tool-registrar-negociacao",
-      "name": "Tool Registrar Negociação",
-      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
-      "typeVersion": 2,
-      "position": [
-        680,
-        700
+        80,
+        1744
       ]
     },
     {
       "parameters": {
         "name": "consultar_pipeline",
         "description": "Consulta as negociações ativas do pipeline comercial (exclui fechadas e perdidas). Não requer parâmetros.",
-        "workflowId": "={{ $env.WF_CONSULTAR_PIPELINE }}",
-        "responsePropertyName": "response",
-        "fields": {
-          "values": [
-            {
-              "name": "vazio",
-              "description": "Não utilizar. Deixe vazio.",
-              "type": "string",
-              "required": false
-            }
-          ]
+        "workflowId": {
+          "__rl": true,
+          "value": "NRImC8Ya0vcjVZcW",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/NRImC8Ya0vcjVZcW",
+          "cachedResultName": "Sub - Consultar Pipeline"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
         }
       },
-      "id": "tool-consultar-pipeline",
-      "name": "Tool Consultar Pipeline",
+      "id": "e224f41e-ce6f-47ac-95e6-f8b8ca793f47",
+      "name": "Tool Consultar Pipeline1",
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2,
       "position": [
-        820,
-        700
+        352,
+        1744
       ]
     },
     {
       "parameters": {
         "name": "atualizar_negociacao",
         "description": "Atualiza o status de uma negociação existente. OBRIGATÓRIO: 'parceiro' (nome exato), 'status_novo' (nova etapa). ATENÇÃO: use sempre 'parceiro', nunca 'empresa'.",
-        "workflowId": "={{ $env.WF_ATUALIZAR_NEGOCIACAO }}",
-        "responsePropertyName": "response",
-        "fields": {
-          "values": [
-            {
-              "name": "parceiro",
-              "description": "Nome exato do parceiro na planilha",
-              "type": "string",
-              "required": true
-            },
-            {
-              "name": "status_novo",
-              "description": "Nova etapa da negociação",
-              "type": "string",
-              "required": true
-            }
-          ]
+        "workflowId": {
+          "__rl": true,
+          "value": "vst52ZqZAHx8KuBK",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/vst52ZqZAHx8KuBK",
+          "cachedResultName": "Sub - Atualizar Negociação"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
         }
       },
-      "id": "tool-atualizar-negociacao",
-      "name": "Tool Atualizar Negociação",
+      "id": "63bcd75f-cba9-4f41-b282-8daf8455e7d7",
+      "name": "Tool Atualizar Negociação1",
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2,
       "position": [
-        960,
-        700
+        496,
+        1744
       ]
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://rsyvaviwzlhfncufutoa.supabase.co/rest/v1/sessions",
+        "inputSource": "passthrough"
+      },
+      "id": "60ee13f0-05ca-4468-a20a-6a2419ddc4a0",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -288,
+        1216
+      ]
+    },
+    {
+      "parameters": {
+        "description": "Registra uma nova negociação no pipeline comercial da Hapvida.\n\nSempre usar quando o usuário mencionar:\n- novo parceiro\n- interesse em proposta\n- início de conversa comercial\n- avanço de negociação\n\nIMPORTANTE:\n- \"parceiro\" = nome da empresa (NUNCA usar \"empresa\")\n- \"produto\" = o que está sendo negociado (ex: mídia digital, clube de vantagens, etc)\n- \"status\" deve ser um dos:\n  - aguardando proposta\n  - proposta enviada\n  - negociação\n  - jurídico\n  - fechado\n\n- \"ponto_focal\" = nome da pessoa do cliente (se não tiver, usar vazio \"\")\n- \"resumo_negociacao\" = resumo claro do que foi falado\n- \"observacoes_gerais\" = usar só se agregar contexto relevante (opcional)\n\nNunca inventar dados.\nSe faltar informação, usar string vazia \"\".",
+        "workflowId": {
+          "__rl": true,
+          "value": "S1TGeXHLs2c3YnY4",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/S1TGeXHLs2c3YnY4",
+          "cachedResultName": "Sub - Registrar Negociação"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "parceiro": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('parceiro', ``, 'string') }}",
+            "produto": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('produto', ``, 'string') }}",
+            "status": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('status', ``, 'string') }}",
+            "ponto_focal": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('ponto_focal', ``, 'string') }}",
+            "resumo_negociacao": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('resumo_negociacao', ``, 'string') }}",
+            "observacoes_gerais": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('observacoes_gerais', ``, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "parceiro",
+              "displayName": "parceiro",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "produto",
+              "displayName": "produto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "ponto_focal",
+              "displayName": "ponto_focal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "resumo_negociacao",
+              "displayName": "resumo_negociacao",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "observacoes_gerais",
+              "displayName": "observacoes_gerais",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        224,
+        1744
+      ],
+      "id": "cda0d8d7-f747-4c08-8fdd-015441ccc2b9",
+      "name": "Tool - Registrar Negociação1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "options": {
+          "systemMessage": "=# DATA ATUAL\nHoje é ${$now.format('dd/MM/yyyy')}. Amanhã é ${$now.plus({days: 1}).format('dd/MM/yyyy')}.\n\n# IDENTIDADE\nVocê é Pedro, assistente executivo.\nSeu papel é EXECUTAR tarefas, não apenas interpretar.\nVocê opera dentro do n8n com acesso a tools específicas.\n\n# REGRA ABSOLUTA: PARSING OBRIGATÓRIO\nANTES de chamar qualquer tool, você DEVE:\n1. Identificar QUAL tool será usada\n2. Extrair TODOS os campos obrigatórios da mensagem do usuário\n3. Montar o JSON com os campos corretos\n4. SÓ ENTÃO chamar a tool\n\nNUNCA envie o campo 'query' com texto livre para nenhuma tool.\nSEMPRE envie campos estruturados conforme o schema de cada tool.\n\n# ROTEAMENTO SEMÂNTICO\nUse esta tabela para decidir qual tool chamar:\n\n| Palavra/Intenção              | Tool                      |\n|-------------------------------|---------------------------|\n| pauta, tarefa, pendência      | criar_tarefa              |\n| agenda, to-do, atividade      | criar_tarefa              |\n| ver tarefas, listar tarefas   | consultar_tarefas         |\n| concluir, mudar prazo, obs    | atualizar_tarefa          |\n| negociação, deal, parceiro    | registrar_negociacao      |\n| pipeline, funil, negociações  | consultar_pipeline        |\n| mudar status negociação       | atualizar_negociacao      |\n\n# COLETA ANTES DE CRIAR TAREFA\nAntes de chamar criar_tarefa, confirme que tem:\n- titulo: OBRIGATÓRIO — extraído ou confirmado\n- prazo: RECOMENDADO — se não mencionado, pergunte UMA vez\n\nSe o usuário não informou prazo, diga naturalmente:\n\"Entendido. Qual o prazo para [titulo]? Se não tiver, é só dizer 'sem prazo'.\"\n\nSó chame criar_tarefa quando:\n1. Tiver o titulo confirmado\n2. O usuário tiver informado o prazo OU confirmado que não há prazo\nExceção: se a frase já tiver prazo claro (\"até amanhã\", \"pra sexta\"), crie direto.\n\n# CONTINUAÇÃO DE CONTEXTO\nANTES de tentar identificar uma nova intenção, verifique o histórico da conversa.\n\nSE sua última mensagem foi uma pergunta de coleta (ex: perguntou prazo de uma tarefa), trate a resposta do usuário como continuação direta — mesmo que seja uma palavra só.\n\nREGRA: mensagem curta após pergunta de prazo = resposta ao prazo.\n\nPADRÃO — prazo pendente:\nSe você perguntou \"Qual o prazo para [titulo]?\" e o usuário responde com:\n- expressão de tempo → converta para DD/MM/AAAA e chame criar_tarefa com titulo + prazo\n- negação ou ausência → chame criar_tarefa com titulo, sem prazo\n\nEXEMPLOS DE CONTINUAÇÃO:\nVocê: \"Qual o prazo para Ligar pro João?\"\nUsuário: \"amanhã\" → criar_tarefa { \"titulo\": \"Ligar pro João\", \"prazo\": \"${$now.plus({days: 1}).format('dd/MM/yyyy')}\" }\n\nVocê: \"Qual o prazo para Revisar contrato?\"\nUsuário: \"sexta\" → criar_tarefa { \"titulo\": \"Revisar contrato\", \"prazo\": \"[calcule próxima sexta]\" }\n\nVocê: \"Qual o prazo para Reunião com o time?\"\nUsuário: \"sem prazo\" → criar_tarefa { \"titulo\": \"Reunião com o time\" }\n\nVocê: \"Qual o prazo para Enviar proposta?\"\nUsuário: \"não tem\" → criar_tarefa { \"titulo\": \"Enviar proposta\" }\n\nNUNCA peça o prazo novamente se o usuário já respondeu.\nNUNCA trate \"amanhã\", \"sexta\", \"semana que vem\" como nova tarefa quando estiver aguardando prazo.\n\n# SCHEMAS DE CADA TOOL\n\n## Tool: criar_tarefa\nExtraia da mensagem:\n- titulo (OBRIGATÓRIO): nome da tarefa\n- prazo (opcional): data no formato DD/MM/AAAA\n- observacao (opcional): detalhes adicionais\n\nEXEMPLOS DE FRASES NATURAIS:\n\"coloca na pauta ligar pro João\" → { titulo: \"Ligar pro João\" } → pergunte prazo\n\"lembra de enviar o relatório até sexta\" → { titulo: \"Enviar relatório\", prazo: [calcule a sexta] }\n\"preciso revisar o contrato da Maxifar amanhã\" → { titulo: \"Revisar contrato Maxifar\", prazo: [amanhã] }\n\"agenda reunião com o time, sem urgência\" → { titulo: \"Reunião com o time\", observacao: \"sem urgência\" } → pergunte prazo\n\nCONVERSÃO DE DATAS RELATIVAS (use DATA ATUAL acima):\n- \"hoje\" → ${$now.format('dd/MM/yyyy')}\n- \"amanhã\" → ${$now.plus({days: 1}).format('dd/MM/yyyy')}\n- \"depois de amanhã\" → ${$now.plus({days: 2}).format('dd/MM/yyyy')}\n- \"sexta\" → calcule a próxima sexta-feira a partir de hoje\n- \"semana que vem\" → calcule a próxima segunda-feira\n- \"fim do mês\" → último dia do mês atual\nSempre converta para DD/MM/AAAA antes de enviar.\n\n## Tool: consultar_tarefas\nSem campos. Chame direto. Retorna apenas tarefas pendentes/em andamento.\n\n## Tool: atualizar_tarefa\nExtraia:\n- titulo (OBRIGATÓRIO): nome da tarefa\n- campo (OBRIGATÓRIO): status | prazo | observacao\n- novo_valor (OBRIGATÓRIO): novo valor\n\nTRADUÇÃO DE INTENÇÃO OBRIGATÓRIA:\n- \"concluir X\" → campo=status, novo_valor=concluída\n- \"adiar X pra 10/04\" → campo=prazo, novo_valor=10/04/2026\n- \"reabrir X\" → campo=status, novo_valor=pendente\n- \"adicionar obs em X: [texto]\" → campo=observacao, novo_valor=[texto]\n\n## Tool: registrar_negociacao\nExtraia:\n- parceiro (OBRIGATÓRIO): nome da empresa\n- ponto_focal (opcional): contato principal\n- produto (OBRIGATÓRIO): produto em negociação\n- status (OBRIGATÓRIO): etapa atual\n- resumo_negociacao (opcional): contexto\n- observacoes_gerais (opcional): notas extras\n\nATENÇÃO: o campo SEMPRE se chama 'parceiro'. Nunca use 'empresa' ou 'nome_empresa'.\n\n## Tool: consultar_pipeline\nSem campos. Chame direto. Retorna negociações ativas (exclui fechadas e perdidas).\n\n## Tool: atualizar_negociacao\nExtraia:\n- parceiro (OBRIGATÓRIO): nome do parceiro\n- status_novo (OBRIGATÓRIO): nova etapa\n\nExemplo: \"Maxifar entrou em compliance\"\nVocê monta: { \"parceiro\": \"Maxifar\", \"status_novo\": \"compliance\" }\nNUNCA envie: { \"query\": \"Maxifar: compliance\" }\n\n# TRATAMENTO DE ERROS\nQuando uma tool retornar erro, INTERPRETE o erro.\nNUNCA reexecute automaticamente. NUNCA entre em loop.\n\n| Código              | Sua ação                                |\n|---------------------|------------------------------------------|\n| CAMPO_FALTANDO      | Pergunte o campo que falta ao usuário    |\n| AMBIGUIDADE         | Liste opções e peça escolha              |\n| NAO_ENCONTRADO      | Informe e sugira verificar o nome        |\n| ERRO_PLANILHA       | Informe que houve erro técnico           |\n| DUPLICADO           | Informe e pergunte se quer atualizar     |\n| CAMPO_INVALIDO      | Informe campos aceitos e peça correção   |\n\nFormato: \"Não consegui [ação] porque [motivo]. Pode me informar [campo]?\"\n\n# MULTI-STEP\nSe o usuário pedir 2+ ações na mesma mensagem:\n1. Identifique TODAS as ações\n2. Monte o JSON de CADA uma separadamente\n3. Execute na ordem lógica\n4. Reporte resultado de cada uma\n\nExemplo: \"Fechei com Maxifar e pode concluir a tarefa de contrato\"\n→ Ação 1: atualizar_negociacao { \"parceiro\": \"Maxifar\", \"status_novo\": \"fechado\" }\n→ Ação 2: atualizar_tarefa { \"titulo\": \"contrato\", \"campo\": \"status\", \"novo_valor\": \"concluída\" }\n\n# COMPORTAMENTO\n1. Seja direto e conversacional, como um assistente de confiança.\n2. Confirme execução com: \"Feito: [ação realizada]\"\n3. Para criar tarefa: se o prazo não foi mencionado, pergunte antes de criar.\n4. Para qualquer outra informação faltando, pergunte UMA vez de forma natural.\n5. Nunca invente dados.\n6. Nunca reexecute tool que deu erro sem nova instrução do usuário.\n7. Converta SEMPRE datas relativas para DD/MM/AAAA usando a DATA ATUAL deste prompt.\n\n# HISTÓRICO DA CONVERSA\n{{ $json.messages.length > 0 ? $json.messages.map(m => m.role.toUpperCase() + ': ' + m.content).join('\\n') : 'Início de conversa.' }}",
+          "maxIterations": 10
+        }
+      },
+      "id": "7b66d0ee-9ea8-4cec-bead-fe4481837872",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -48,
+        1376
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "id": "ff140805-ea39-4ba8-820f-8b5e4c748ca1",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        -128,
+        1488
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "vBdGzFHWyLLsaOPt",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://rsyvaviwzlhfncufutoa.supabase.co/rest/v1/session_messages?session_id=eq.{{ $('Upsert Sessao').first().json.id }}&order=created_at.asc&limit=10",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -279,78 +378,32 @@
             {
               "name": "Authorization",
               "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzeXZhdml3emxoZm5jdWZ1dG9hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNTg3ODksImV4cCI6MjA5MTYzNDc4OX0.n54iwErxsXPHPVFm09ay2VuPtmXgxp20HLMKXGu1-VQ"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
-              "name": "Prefer",
-              "value": "resolution=merge-duplicates,return=representation"
             }
           ]
         },
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "user_id",
-              "value": "={{ $json.sessionId ?? 'default' }}"
-            },
-            {
-              "name": "last_active",
-              "value": "={{ new Date().toISOString() }}"
-            }
-          ]
-        }
+        "options": {}
       },
-      "id": "upsert-session",
-      "name": "Upsert Sessão",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        480,
-        140
-      ]
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "=https://rsyvaviwzlhfncufutoa.supabase.co/rest/v1/session_messages?session_id=eq.{{$json[0].id}}&order=created_at.asc&limit=10",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "apikey",
-              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzeXZhdml3emxoZm5jdWZ1dG9hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNTg3ODksImV4cCI6MjA5MTYzNDc4OX0.n54iwErxsXPHPVFm09ay2VuPtmXgxp20HLMKXGu1-VQ"
-            },
-            {
-              "name": "Authorization",
-              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzeXZhdml3emxoZm5jdWZ1dG9hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNTg3ODksImV4cCI6MjA5MTYzNDc4OX0.n54iwErxsXPHPVFm09ay2VuPtmXgxp20HLMKXGu1-VQ"
-            }
-          ]
-        }
-      },
-      "id": "carregar-historico",
+      "id": "f3916817-95f3-4f9e-be92-1a70f66e60ca",
       "name": "Carregar Histórico",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        700,
-        140
-      ]
+        176,
+        1216
+      ],
+      "alwaysOutputData": true
     },
     {
       "parameters": {
-        "jsCode": "\nconst sessionData = $('Upsert Sessão').item.json[0];\nconst historico = $input.all().map(i => i.json);\nconst chatInput = $('Chat Trigger').item.json.chatInput ?? '';\n\nconst messages = historico.map(msg => ({\n  role: msg.role,\n  content: msg.content\n}));\n\nreturn {\n  session_id: sessionData.id,\n  messages: messages,\n  chatInput: chatInput\n};\n"
+        "jsCode": "const historico = $input.all().map(i => i.json).filter(i => i.role);\nconst chatInput = $('Execute Workflow Trigger').first().json.chatInput ?? \n                  $('Execute Workflow Trigger').first().json.query ?? '';\n\nconst messages = historico.map(msg => ({\n  role: msg.role,\n  content: msg.content\n}));\n\nreturn {\n  session_id: $('Upsert Sessao').first().json.id,\n  messages: messages,\n  chatInput: chatInput\n};"
       },
-      "id": "montar-contexto",
+      "id": "736bad2d-69ee-46f0-a06e-e97cde5699ff",
       "name": "Montar Contexto",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        920,
-        140
+        400,
+        1216
       ]
     },
     {
@@ -394,15 +447,16 @@
               "value": "={{ $('Montar Contexto').item.json.chatInput }}"
             }
           ]
-        }
+        },
+        "options": {}
       },
-      "id": "salvar-user",
+      "id": "3adc8524-1297-4d56-b978-ad5bb4e35ded",
       "name": "Salvar Msg Usuário",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1140,
-        140
+        624,
+        1216
       ]
     },
     {
@@ -446,25 +500,165 @@
               "value": "={{ $json.output }}"
             }
           ]
-        }
+        },
+        "options": {}
       },
-      "id": "salvar-assistant",
+      "id": "6d586ecb-9e6d-4ce0-b10a-8b1da090cd83",
       "name": "Salvar Resposta Pedro",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1360,
-        300
+        624,
+        1376
       ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://rsyvaviwzlhfncufutoa.supabase.co/rest/v1/sessions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzeXZhdml3emxoZm5jdWZ1dG9hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNTg3ODksImV4cCI6MjA5MTYzNDc4OX0.n54iwErxsXPHPVFm09ay2VuPtmXgxp20HLMKXGu1-VQ"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzeXZhdml3emxoZm5jdWZ1dG9hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNTg3ODksImV4cCI6MjA5MTYzNDc4OX0.n54iwErxsXPHPVFm09ay2VuPtmXgxp20HLMKXGu1-VQ"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "user_id",
+              "value": "={{ $json.sessionId ?? 'default' }}"
+            },
+            {
+              "name": "last_active",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fc2d8d47-157b-4ee7-92bd-00920847af26",
+      "name": "Upsert Sessao",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -48,
+        1216
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "00926142-5c3b-48c1-a6fe-b6c677730844",
+              "name": "output",
+              "value": "={{ $('AI Agent').first().json.output }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        832,
+        1376
+      ],
+      "id": "a5d809dc-c4eb-4e40-9da1-2aec396f3808",
+      "name": "Output"
     }
   ],
+  "pinData": {},
   "connections": {
-    "Chat Trigger": {
+    "Tool Criar Tarefa1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool Consultar Tarefas1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool Atualizar Tarefa1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool Consultar Pipeline1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool Atualizar Negociação1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Workflow Trigger": {
       "main": [
         [
           {
-            "node": "Upsert Sessão",
+            "node": "Upsert Sessao",
             "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool - Registrar Negociação1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
             "index": 0
           }
         ]
@@ -476,83 +670,6 @@
           {
             "node": "AI Agent",
             "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Tool Criar Tarefa": {
-      "ai_tool": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Tool Consultar Tarefas": {
-      "ai_tool": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Tool Atualizar Tarefa": {
-      "ai_tool": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Tool Registrar Negociação": {
-      "ai_tool": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Tool Consultar Pipeline": {
-      "ai_tool": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Tool Atualizar Negociação": {
-      "ai_tool": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Upsert Sessão": {
-      "main": [
-        [
-          {
-            "node": "Carregar Histórico",
-            "type": "main",
             "index": 0
           }
         ]
@@ -585,11 +702,6 @@
         ]
       ]
     },
-    "Salvar Msg Usuário": {
-      "main": [
-        []
-      ]
-    },
     "AI Agent": {
       "main": [
         [
@@ -600,17 +712,47 @@
           }
         ]
       ]
+    },
+    "Upsert Sessao": {
+      "main": [
+        [
+          {
+            "node": "Carregar Histórico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar Resposta Pedro": {
+      "main": [
+        [
+          {
+            "node": "Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
+  "active": true,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "binaryMode": "separate"
   },
-  "staticData": null,
+  "versionId": "405d3064-9b01-4c4f-878b-a6738ecafdf6",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "01bc05f0553aff7ba0da519e11dfbdfc76568229ccbe8c733a06f1aec0371978"
+  },
+  "id": "s6j5lqTOKC3j410f",
   "tags": [
     {
+      "updatedAt": "2026-04-04T16:48:17.427Z",
+      "createdAt": "2026-04-04T16:48:17.427Z",
+      "id": "ffssraqRfChs9n3P",
       "name": "agente-pedro"
     }
-  ],
-  "triggerCount": 1,
-  "pinData": {}
+  ]
 }
