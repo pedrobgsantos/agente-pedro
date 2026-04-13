@@ -1,0 +1,400 @@
+{
+  "name": "API - Decision Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// filtrar_followups\nconst data = $input.first().json;\nconst all = [...(data.agora || []), ...(data.hoje || []), ...(data.podeEsperar || [])];\nfunction isFollowup(a) {\n  return a._requiresFollowup === true || a._requiresFollowup === 'true';\n}\nconst followups = all.filter(isFollowup);\nconst nonFollowups = all.filter(a => !isFollowup(a));\nreturn [{ json: { followups, nonFollowups, original: data } }];\n"
+      },
+      "id": "648e992b-4ba2-4b70-a949-32e8207fec5d",
+      "name": "filtrar_followups",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "path": "decidir-acoes",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "e0f066c6-7fc6-45e2-bbcf-377dcf176b4c",
+      "name": "Webhook (manual)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1376,
+        240
+      ],
+      "webhookId": "decidir-acoes"
+    },
+    {
+      "parameters": {
+        "workflowId": "K3caa0uYq8uZJnRH",
+        "options": {}
+      },
+      "id": "f3434ae1-fd6f-4859-816e-dfe61076509a",
+      "name": "consultar_tarefas",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        -992,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// build_response — branch WITH follow-up messages\n\nconst mergeData = $items('merge_and_prioritize')[0].json;\n// se no seu canvas não existir \"merge_and_prioritize1\", troque pelo nome EXATO do node\n\nconst followupResults = $input.all().map(i => i.json);\n\nconst followupMap = {};\nfor (const f of followupResults) {\n  if (f.id) {\n    followupMap[String(f.id)] = f.mensagem_pronta || '';\n  }\n}\n\nfunction buildAction(action) {\n  const out = {\n    id: action.id,\n    tipo: action.tipo,\n    action_type: action.action_type,\n    titulo: action.titulo,\n    motivo: (action.motivo || []).slice(0, 3),\n    impacto: action.impacto,\n    risco: action.risco,\n    tempo_estimado: action.tempo_estimado,\n    acao_recomendada: action.acao_recomendada,\n    next_best_action: action.next_best_action,\n  };\n\n  if (action.tipo === 'pipeline') {\n    out.parceiro = action.parceiro;\n  }\n\n  if (followupMap[String(action.id)]) {\n    out.mensagem_pronta = followupMap[String(action.id)];\n  }\n\n  return out;\n}\n\nconst response = {\n  status: 'ok',\n  resumo: {\n    agora: mergeData.agora.length,\n    hoje: mergeData.hoje.length,\n    podeEsperar: mergeData.podeEsperar.length,\n    total_agora_original: mergeData.total_agora_original,\n    total_hoje_original: mergeData.total_hoje_original,\n    total_podeEsperar_original: mergeData.total_podeEsperar_original,\n  },\n  agora: (mergeData.agora || []).map(buildAction),\n  hoje: (mergeData.hoje || []).map(buildAction),\n  podeEsperar: (mergeData.podeEsperar || []).map(buildAction),\n};\n\nreturn [{ json: response }];"
+      },
+      "id": "3d53d88c-6b31-4863-ab59-01bf9aebeed8",
+      "name": "build_response (with followup)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "M2tq0pTDvGxoDQiS",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/M2tq0pTDvGxoDQiS",
+          "cachedResultName": "Sub - Gerar Follow-up Inteligente"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "9001845d-bd6f-45b2-bf5b-02ff40846634",
+      "name": "gerar_followup_inteligente",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        272,
+        240
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const tarefasRaw = $input.first().json?.response || [];\nconst pipelineRaw = $('consultar_pipeline').first()?.json?.response || [];\n\n// =====================\n// NORMALIZAR TAREFAS\n// =====================\nconst tarefas = tarefasRaw\n  .filter(t => {\n    const status = (t.status_norm || '').toLowerCase();\n    return status !== 'concluido' && status !== 'feito';\n  })\n  .map(t => ({\n    ...t,\n    tipo: 'tarefa'\n  }));\n\n// =====================\n// NORMALIZAR PIPELINE\n// =====================\nconst pipeline = pipelineRaw\n  .filter(p => {\n    const status = (p.status_norm || '').toLowerCase();\n    return status !== 'fechamento' && status !== 'ganho' && status !== 'perdido';\n  })\n  .map(p => ({\n    ...p,\n    tipo: 'pipeline'\n  }));\n\n// =====================\n// OUTPUT\n// =====================\nreturn [\n  {\n    json: {\n      tarefas,\n      pipeline\n    }\n  }\n];"
+      },
+      "id": "fd856f0a-0eed-429f-b779-ad27812371d0",
+      "name": "normalize_data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -832,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\nconst pipeline = input.pipeline || [];\n\nconst SLA = {\n  'aguardando proposta': 7,\n  'compliance': 3,\n  'minuta com cliente': 7,\n  'juridico': 10,\n  'fechamento': 3,\n};\n\nfunction scorePipeline(item) {\n  let score = 0;\n  const motivo = [];\n\n  const status = (item.status_norm || '').toLowerCase();\n\n  // peso por status\n  if (SLA[status]) {\n    score += SLA[status];\n    motivo.push(`SLA ${status}`);\n  }\n\n  // dias parado\n  if (item.data_inicio_status) {\n    const inicio = new Date(item.data_inicio_status.split('/').reverse().join('-'));\n    const hoje = new Date();\n    const dias = Math.floor((hoje - inicio) / (1000 * 60 * 60 * 24));\n\n    score += dias;\n\n    if (dias > 5) {\n      motivo.push(`${dias} dias parado`);\n    }\n  }\n\n  return {\n    ...item,\n    score,\n    motivo\n  };\n}\n\n// 🔥 IMPORTANTE: aqui estava quebrando antes\nconst pipelineScored = pipeline.map(scorePipeline);\n\nreturn [\n  {\n    json: {\n      pipeline: pipelineScored,\n      tarefas: input.tarefas || []\n    }\n  }\n];"
+      },
+      "id": "2388e4e0-9a4f-4626-a7cb-6cedf1b569db",
+      "name": "score_pipeline",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// score_tasks\nconst input = $input.first().json;\n\nconst tarefas = input.tarefas || [];\nconst pipeline = input.pipeline || [];\n\nfunction calcularDiasRestantes(prazo) {\n  if (!prazo) return null;\n\n  const hoje = new Date();\n  const data = new Date(prazo.split('/').reverse().join('-'));\n\n  return Math.floor((data - hoje) / (1000 * 60 * 60 * 24));\n}\n\nfunction scoreTarefa(item) {\n  let score = 0;\n  const motivo = [];\n  let risco = 'baixo';\n\n  const daysUntilDue = calcularDiasRestantes(item.prazo);\n  const status = (item.status_norm || '').toLowerCase();\n\n  // 🔥 PRIORIDADE POR PRAZO\n  if (daysUntilDue !== null && daysUntilDue < 0) {\n    score += 5;\n    risco = 'alto';\n    motivo.push(`Tarefa vencida há ${Math.abs(daysUntilDue)} dia(s)`);\n  } else if (daysUntilDue === 0) {\n    score += 4;\n    risco = 'medio';\n    motivo.push('Tarefa vence hoje');\n  } else if (daysUntilDue !== null && daysUntilDue <= 2) {\n    score += 3;\n    risco = 'medio';\n    motivo.push(`Vence em ${daysUntilDue} dia(s)`);\n  }\n\n  // 🔥 PRIORIDADE POR STATUS\n  if (['em andamento', 'in progress', 'in_progress'].includes(status)) {\n    score += 2;\n    motivo.push('Tarefa em andamento');\n  } else if (['pendente', 'pending'].includes(status)) {\n    score += 1;\n    motivo.push('Tarefa pendente');\n  }\n\n  return {\n    ...item,\n    score,\n    motivo,\n    risco\n  };\n}\n\nconst scoredTarefas = tarefas.map(scoreTarefa);\n\nreturn [\n  {\n    json: {\n      pipeline,\n      tarefas: scoredTarefas\n    }\n  }\n];"
+      },
+      "id": "47104ba7-1773-4301-8937-0810c5bfcc87",
+      "name": "score_tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -416,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// merge_and_prioritize\nconst { pipeline, tarefas } = $input.first().json;\n\nconst SLA = {\n  'aguardando proposta': 7,\n  'compliance': 3,\n  'minuta com cliente': 7,\n  'juridico': 10,\n  'fechamento': 3,\n};\n\nfunction getBucket(score) {\n  if (score >= 6) return 'agora';\n  if (score >= 3) return 'hoje';\n  return 'podeEsperar';\n}\n\nfunction getImpacto(score) {\n  if (score >= 8) return 'alto';\n  if (score >= 4) return 'medio';\n  return 'baixo';\n}\n\nfunction needsFollowup(item) {\n  const sf = item.status_followup_norm;\n  const daysSince = item._days_since_followup;\n  if (sf === 'late' || sf === 'atrasado') return true;\n  if (sf === 'pending' || sf === 'pendente') return true;\n  if (daysSince === null) return true;\n  if (daysSince >= 3) return true;\n  return false;\n}\n\nfunction getPipelineRisco(item) {\n  const sla = SLA[item.status_norm] || null;\n  const daysInStatus = item._days_in_status;\n  if (sla !== null && daysInStatus !== null) {\n    if (daysInStatus > sla + 7) return 'alto';\n    if (daysInStatus > sla) return 'medio';\n  }\n  return 'baixo';\n}\n\nfunction getNextBestAction(tipo, action_type, status_norm, bucket) {\n  const urgencia = bucket === 'agora' ? 'alta' : bucket === 'hoje' ? 'media' : 'baixa';\n  if (tipo === 'tarefa') {\n    return { tipo: 'execucao', canal: 'crm', objetivo: 'executar tarefa', urgencia };\n  }\n  if (action_type === 'check_pipeline') {\n    return { tipo: 'analise', canal: 'crm', objetivo: 'revisar negociacao', urgencia };\n  }\n  const objetivoMap = {\n    'aguardando proposta': 'destravar proposta',\n    'compliance': 'acelerar compliance',\n    'juridico': 'cobrar devolutiva juridica',\n    'fechamento': 'avancar fechamento',\n  };\n  const objetivo = objetivoMap[status_norm] || 'avancar negociacao';\n  return { tipo: 'followup', canal: 'whatsapp', objetivo, urgencia };\n}\n\nconst actions = [];\n\nfor (const item of pipeline) {\n  const risco = getPipelineRisco(item);\n  let boostedScore = item.score;\n  if (risco === 'alto') boostedScore += 3;\n  else if (risco === 'medio') boostedScore += 1;\n\n  const bucket = getBucket(boostedScore);\n  const impacto = getImpacto(boostedScore);\n  const requiresFollowup = needsFollowup(item);\n  const action_type = requiresFollowup ? 'followup' : 'check_pipeline';\n  const next_best_action = getNextBestAction('pipeline', action_type, item.status_norm, bucket);\n\n  const contato = item.ponto_focal || item.parceiro || 'responsável';\n\n  const titulo = action_type === 'followup'\n    ? `Follow-up: ${item.parceiro} — ${item.produto}`\n    : `Analisar negociação: ${item.parceiro} — ${item.produto}`;\n\n  const acao_recomendada = action_type === 'followup'\n    ? `Enviar follow-up para ${contato} sobre ${item.produto}`\n    : `Verificar andamento da negociação com ${item.parceiro}`;\n\n  const tempo_estimado = action_type === 'followup' ? '2 min' : '5 min';\n\n  const action = {\n    id: item.id_followup,\n    tipo: 'pipeline',\n    action_type,\n    parceiro: item.parceiro,\n    titulo,\n    motivo: item.motivo,\n    impacto,\n    risco,\n    bucket,\n    score: boostedScore,\n    tempo_estimado,\n    acao_recomendada,\n    next_best_action,\n    _requiresFollowup: requiresFollowup,\n    _raw: item,\n  };\n\n  actions.push(action);\n}\n\nfor (const item of tarefas) {\n  const bucket = getBucket(item.score);\n  const impacto = getImpacto(item.score);\n  const risco = item.risco || 'baixo';\n  const next_best_action = getNextBestAction('tarefa', 'execucao', null, bucket);\n  const daysUntilDue = item._days_until_due;\n  const tempo_estimado = (daysUntilDue !== null && daysUntilDue <= 0) ? '10 min' : '5 min';\n\n  const action = {\n    id: item.id,\n    tipo: 'tarefa',\n    action_type: 'execucao',\n    titulo: item.titulo,\n    motivo: item.motivo,\n    impacto,\n    risco,\n    bucket,\n    score: item.score,\n    tempo_estimado,\n    acao_recomendada: `Executar tarefa: ${item.titulo}`,\n    next_best_action,\n    _requiresFollowup: false,\n    _raw: item,\n  };\n\n  actions.push(action);\n}\n\nactions.sort((a, b) => b.score - a.score);\n\nconst agoraAll = actions.filter(a => a.bucket === 'agora');\nconst hojeAll = actions.filter(a => a.bucket === 'hoje');\nconst podeEsperarAll = actions.filter(a => a.bucket === 'podeEsperar');\n\nconst agora = agoraAll.slice(0, 5);\nconst hoje = hojeAll.slice(0, 10);\nconst podeEsperar = podeEsperarAll.slice(0, 10);\n\nconst has_followup_actions = actions.some(a => a._requiresFollowup);\n\nreturn [{ json: {\n  actions,\n  agora,\n  hoje,\n  podeEsperar,\n  has_followup_actions,\n  total_agora_original: agoraAll.length,\n  total_hoje_original: hojeAll.length,\n  total_podeEsperar_original: podeEsperarAll.length,\n} }];\n"
+      },
+      "id": "e2e3c65c-e328-417a-b659-25d3bb71deb0",
+      "name": "merge_and_prioritize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "2632264a-7387-46d7-9e89-f86febbc2528",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        752,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "NRImC8Ya0vcjVZcW",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/NRImC8Ya0vcjVZcW",
+          "cachedResultName": "Sub - Consultar Pipeline"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -1168,
+        240
+      ],
+      "id": "9d1390e9-4be1-467e-98b5-2063e27348e3",
+      "name": "consultar_pipeline"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 4
+            }
+          ]
+        }
+      },
+      "id": "node-schedule",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1376,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://rsyvaviwzlhfncufutoa.supabase.co/rest/v1/decision_engine_cache",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzeXZhdml3emxoZm5jdWZ1dG9hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNTg3ODksImV4cCI6MjA5MTYzNDc4OX0.n54iwErxsXPHPVFm09ay2VuPtmXgxp20HLMKXGu1-VQ"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzeXZhdml3emxoZm5jdWZ1dG9hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNTg3ODksImV4cCI6MjA5MTYzNDc4OX0.n54iwErxsXPHPVFm09ay2VuPtmXgxp20HLMKXGu1-VQ"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ resultado: $json }) }}"
+      },
+      "id": "node-save-supabase",
+      "name": "Salvar no Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        752,
+        80
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "filtrar_followups": {
+      "main": [
+        [
+          {
+            "node": "gerar_followup_inteligente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "consultar_tarefas": {
+      "main": [
+        [
+          {
+            "node": "normalize_data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "build_response (with followup)": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Salvar no Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gerar_followup_inteligente": {
+      "main": [
+        [
+          {
+            "node": "build_response (with followup)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "normalize_data": {
+      "main": [
+        [
+          {
+            "node": "score_pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "score_pipeline": {
+      "main": [
+        [
+          {
+            "node": "score_tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "score_tasks": {
+      "main": [
+        [
+          {
+            "node": "merge_and_prioritize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "merge_and_prioritize": {
+      "main": [
+        [
+          {
+            "node": "filtrar_followups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "consultar_pipeline": {
+      "main": [
+        [
+          {
+            "node": "consultar_tarefas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook (manual)": {
+      "main": [
+        [
+          {
+            "node": "consultar_pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "consultar_pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "6bd432cc-4653-43d0-95ee-01a1c685d449",
+  "meta": {
+    "instanceId": "01bc05f0553aff7ba0da519e11dfbdfc76568229ccbe8c733a06f1aec0371978"
+  },
+  "id": "jQDULH5mXb3Vk3Ka",
+  "tags": [
+    {
+      "updatedAt": "2026-04-10T00:37:03.305Z",
+      "createdAt": "2026-04-10T00:37:03.305Z",
+      "id": "JCk1DagxiUJC6alj",
+      "name": "decision-engine"
+    },
+    {
+      "updatedAt": "2026-04-10T00:37:03.331Z",
+      "createdAt": "2026-04-10T00:37:03.331Z",
+      "id": "zYKWqGXEtKvr0gW9",
+      "name": "commercial"
+    }
+  ]
+}
