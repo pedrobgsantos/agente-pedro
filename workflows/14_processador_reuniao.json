@@ -1,0 +1,135 @@
+{
+  "name": "Processador de Reunião",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "processar-reuniao",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "processador-reuniao"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst notas = body.notas || '';\nif (!notas) throw new Error('Campo notas obrigatório');\nreturn [{ json: { notas } }];"
+      },
+      "id": "preparar-input",
+      "name": "Preparar Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {}
+      },
+      "id": "node-openai-model",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [700, 500],
+      "credentials": {
+        "openAiApi": {
+          "id": "1",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.notas }}",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "SystemMessage",
+              "message": "Você é um assistente especializado em extrair informações estruturadas de notas de reuniões comerciais B2B.\n\nCONTEXTO DO NEGÓCIO:\n- Pedro representa uma empresa que oferece benefícios corporativos\n- O cliente elabora e envia propostas para Pedro avaliar\n- Pedro nunca envia proposta — ele recebe\n\nTAREFA:\nAnalise as notas da reunião e retorne APENAS um JSON válido, sem explicações, sem markdown, sem backticks.\n\nSCHEMA OBRIGATÓRIO:\n{\n  \"parceiro\": \"nome da empresa identificada\",\n  \"data_reuniao\": \"DD/MM/AAAA ou vazio se não mencionado\",\n  \"ponto_focal\": \"nome do contato principal ou vazio\",\n  \"tarefas\": [\n    { \"titulo\": \"descrição da tarefa\", \"prazo\": \"DD/MM/AAAA ou vazio\" }\n  ],\n  \"pipeline\": {\n    \"acao\": \"atualizar ou registrar ou nenhuma\",\n    \"status_novo\": \"status identificado ou vazio\",\n    \"produto\": \"produto discutido ou vazio\",\n    \"resumo\": \"resumo executivo da negociação em 1-2 frases\"\n  },\n  \"memoria\": [\n    \"ponto importante que deve ser lembrado para reuniões futuras\"\n  ]\n}\n\nREGRAS:\n- Se não identificar parceiro claramente, deixe vazio\n- Status válidos: aguardando proposta | compliance | minuta com cliente | juridico | fechamento\n- Tarefas só com ações concretas — ignore menções vagas\n- Memória: máximo 3 pontos, só o que realmente importa para o futuro\n- Retorne APENAS o JSON, nada mais"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-llm-chain",
+      "name": "Basic LLM Chain",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.text || $input.first().json.output || '';\nconst clean = raw.replace(/```json|```/g, '').trim();\ntry {\n  const parsed = JSON.parse(clean);\n  return [{ json: { status: 'ok', dados: parsed } }];\n} catch {\n  return [{ json: { status: 'erro', mensagem: 'Não foi possível processar as notas.' } }];\n}"
+      },
+      "id": "parsear-json",
+      "name": "Parsear JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1180, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          { "node": "Preparar Input", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Preparar Input": {
+      "main": [
+        [
+          { "node": "Basic LLM Chain", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          { "node": "Basic LLM Chain", "type": "ai_languageModel", "index": 0 }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          { "node": "Parsear JSON", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Parsear JSON": {
+      "main": [
+        [
+          { "node": "Respond to Webhook", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "agente-pedro" },
+    { "name": "reuniao" }
+  ]
+}
